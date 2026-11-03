@@ -7,6 +7,7 @@ import TriageScaleView from "@/components/TriageScaleView";
 import AgentFormView from "@/components/AgentFormView";
 import { UseCaseFrameworkView } from "@/components/UseCaseFrameworkView";
 import { AzureSettingsModal } from "@/components/AzureSettingsModal";
+import { Dialog } from "@/components/Dialog";
 import {
   STUDIO_SAMPLES,
   type StudioSample,
@@ -35,7 +36,9 @@ export default function HomePage() {
     "studio" | "framework" | "runtime" | "triage" | "form"
   >("studio");
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [showGuide, setShowGuide] = useState<boolean>(true);
+  const [showGuide, setShowGuide] = useState(false);
+  const toolsMenuRef = useRef<HTMLDetailsElement>(null);
+  const examplesMenuRef = useRef<HTMLDetailsElement>(null);
 
   const [azureConfig, setAzureConfig] = useState<AzureClientConfig>(
     DEFAULT_AZURE_CONFIG
@@ -43,6 +46,26 @@ export default function HomePage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [demoVideoOpen, setDemoVideoOpen] = useState(false);
   const demoVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const closeMenus = (event: MouseEvent | KeyboardEvent) => {
+      for (const menu of [toolsMenuRef.current, examplesMenuRef.current]) {
+        if (!menu?.open) continue;
+        if (event instanceof KeyboardEvent && event.key === "Escape") {
+          menu.open = false;
+          menu.querySelector("summary")?.focus();
+        } else if (event instanceof MouseEvent && !menu.contains(event.target as Node)) {
+          menu.open = false;
+        }
+      }
+    };
+    document.addEventListener("click", closeMenus);
+    document.addEventListener("keydown", closeMenus);
+    return () => {
+      document.removeEventListener("click", closeMenus);
+      document.removeEventListener("keydown", closeMenus);
+    };
+  }, []);
 
   const [customUseCases, setCustomUseCases] = useState<StudioSample[]>([]);
   const [studioExternalSample, setStudioExternalSample] =
@@ -345,195 +368,79 @@ export default function HomePage() {
       ? azureConfig.terraDeployment || "gpt-6.1-terra"
       : health?.terraDeployment || "gpt-6.1-terra";
 
+  const workflowDescriptions = {
+    runtime: { title: "Decisions as the conversation unfolds", problem: "Identify changes in intent before a conversation ends.", proof: "Watch structured signals update as new words arrive, rather than waiting for a complete response." },
+    triage: { title: "Route a queue, not just one message", problem: "Keep incoming requests from waiting behind a slow classification step.", proof: "Compare queue depth, throughput and response time as the message rate increases." },
+    form: { title: "From a claim to a checked next step", problem: "Check insurance policy conditions before drafting a reply.", proof: "Separate structured policy decisions from generated text, with source-linked form fields." },
+  };
+
   return (
     <div className="app-shell">
-      {/* Architectural Single-Row Topbar */}
+      <a className="skip-link" href="#workspace-content">Skip to workspace</a>
       <header className="topbar">
-        <div className="brand">
+        <button className="brand brand-home" onClick={() => setActiveTab("studio")} aria-label="Microsoft-Decision-1 home">
           <div className="brand-mark">M1</div>
           <div>
             <span className="brand-title">
               Microsoft-Decision-1
-              <span className="model-vs-badges">
-                <span className="model-pill d1">System-1 Engine</span>
-                <span style={{ color: "var(--text-dim)" }}>vs</span>
-                <span className="model-pill terra">{comparisonModelLabel}</span>
-              </span>
             </span>
-            <span className="brand-sub">
-              {azureConfig.mode === "backend"
-                ? "Frontend + Backend Server (Default) · Azure AI Foundry"
-                : "Client-Only Browser Mode · Custom Azure Endpoint & Entra ID"}
-            </span>
+            <span className="brand-sub">A decision lab</span>
           </div>
-        </div>
+        </button>
 
         <nav className="nav-tabs" aria-label="Primary Workspaces">
           <button
             className={`nav-tab ${activeTab === "studio" ? "active" : ""}`}
             onClick={() => setActiveTab("studio")}
+            aria-current={activeTab === "studio" ? "page" : undefined}
           >
-            <span className="num">01</span> Decision Workbench
+            Compare
           </button>
           <button
             className={`nav-tab ${activeTab === "framework" ? "active" : ""}`}
             onClick={() => setActiveTab("framework")}
+            aria-current={activeTab === "framework" ? "page" : undefined}
           >
-            <span className="num">02</span> Industry Catalog ({allUseCases.length})
+            Solutions
           </button>
-          <button
-            className={`nav-tab ${activeTab === "runtime" ? "active" : ""}`}
-            onClick={() => setActiveTab("runtime")}
-          >
-            <span className="num">03</span> Stream + Decide
-          </button>
-          <button
-            className={`nav-tab ${activeTab === "triage" ? "active" : ""}`}
-            onClick={() => setActiveTab("triage")}
-          >
-            <span className="num">04</span> Triage at Scale
-          </button>
-          <button
-            className={`nav-tab ${activeTab === "form" ? "active" : ""}`}
-            onClick={() => setActiveTab("form")}
-          >
-            <span className="num">05</span> Claims Gate &amp; Form
-          </button>
+          <details className="header-menu" ref={examplesMenuRef}>
+            <summary className={`nav-tab ${["runtime", "triage", "form"].includes(activeTab) ? "active" : ""}`}>More demos <span aria-hidden="true">⌄</span></summary>
+            <div className="header-menu-panel">
+              {([["runtime", "Live conversation", "Decide as words arrive"], ["triage", "Queue triage", "Compare throughput at scale"], ["form", "Claims workflow", "Policy gates and form extraction"]] as const).map(([tab, title, description]) =>
+                <button key={tab} onClick={() => { setActiveTab(tab); if (examplesMenuRef.current) examplesMenuRef.current.open = false; }} aria-current={activeTab === tab ? "page" : undefined}>
+                  <strong>{title}</strong><small>{description}</small>
+                </button>
+              )}
+            </div>
+          </details>
         </nav>
 
         <div className="topbar-right">
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => setDemoVideoOpen(true)}
-            style={{
-              borderColor: "var(--primary)",
-              color: "var(--primary)",
-              background: "var(--primary-soft)",
-              fontWeight: 600,
-            }}
-            title="Watch the 69-second narrated Playwright product demo (Azure Neural TTS)"
-          >
-            &#9654; Watch Demo (1:09)
-          </button>
-
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => setShowGuide((g) => !g)}
-            style={{
-              borderColor: showGuide ? "var(--primary)" : "var(--border)",
-              color: showGuide ? "var(--primary)" : "var(--text)",
-            }}
-          >
-            {showGuide ? "Hide Guide" : "? Quick Guide"}
-          </button>
-
-          <button
-            type="button"
-            className="pill"
-            onClick={() => setSettingsOpen(true)}
-            style={{ cursor: "pointer" }}
-            title="Configure Execution Mode (Backend Server vs Client-Only Browser) and Azure AI Foundry Credentials"
-          >
-            <span
-              className={`dot ${
-                effectiveReady && (health?.ok ?? true) ? "ok" : "warn"
-              }`}
-            />
-            <span>
-              {azureConfig.mode === "backend"
-                ? wsConnected
-                  ? health?.decision_latency_ms
-                    ? `Backend Mode · ${health.decision_latency_ms}ms`
-                    : "Backend Mode · Connected"
-                  : "Backend Mode · Connecting…"
-                : isFrontendReady
-                ? "Client-Only Mode · Ready"
-                : "Client-Only · Setup Endpoint"}
-            </span>
-            <span style={{ color: "var(--text-dim)", marginLeft: 2 }}>⚙</span>
-          </button>
-
-          <button
-            type="button"
-            className="ghost"
-            onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-            title="Switch between Editorial Paper (Light) and Matte Graphite (Dark)"
-          >
-            {theme === "light" ? "Graphite" : "Paper"}
-          </button>
+          <details className="header-menu" ref={toolsMenuRef}>
+            <summary className="tools-trigger">Options <span aria-hidden="true">⌄</span></summary>
+            <div className="header-menu-panel tools-panel" onClick={(event) => { if ((event.target as HTMLElement).closest("button") && toolsMenuRef.current) toolsMenuRef.current.open = false; }}>
+              <button onClick={() => setSettingsOpen(true)}><strong>Connection settings</strong><small>{azureConfig.mode === "backend" ? "Backend server (default)" : "Client-only browser"} · {effectiveReady && (health?.ok ?? true) ? "Connected" : "Setup needed"}</small></button>
+              <button onClick={() => setShowGuide(true)}><strong>How to use this lab</strong><small>A three-step guide</small></button>
+              <button onClick={() => setDemoVideoOpen(true)}><strong>Watch the product tour</strong><small>69 seconds · narrated demo</small></button>
+              <button onClick={() => setTheme((t) => t === "light" ? "dark" : "light")}><strong>{theme === "light" ? "Switch to dark appearance" : "Switch to light appearance"}</strong></button>
+            </div>
+          </details>
         </div>
       </header>
 
-      {/* Collapsible 3-Step User Guide & Architecture Overview */}
-      {showGuide && (
-        <section className="guide-strip" aria-label="How to use this showcase">
-          <div className="guide-strip-inner">
-            <div>
-              <span className="guide-step-num">Why Microsoft-Decision-1?</span>
-              <div className="guide-step-title">
-                Deterministic System-1 Decisions in One Forward Pass
-              </div>
-              <p className="guide-step-desc">
-                Evaluates structured questions (<b>Noul</b> yes/no,{" "}
-                <b>Choice</b> routing, <b>Score</b> rubrics) in ~260ms with
-                calibrated probabilities and <b>$0 output token cost</b>.
-              </p>
-            </div>
-
-            <div className="guide-step">
-              <span className="guide-step-num">Step 01 · Select Scenario</span>
-              <div className="guide-step-title">
-                Read the Problem &amp; Proof Brief
-              </div>
-              <p className="guide-step-desc">
-                Pick any of the 16 enterprise scenarios on the left to see what
-                business bottleneck it solves and what capability of{" "}
-                <b>Microsoft-Decision-1</b> it proves.
-              </p>
-            </div>
-
-            <div className="guide-step">
-              <span className="guide-step-num">Step 02 · Switch Test Cases</span>
-              <div className="guide-step-title">
-                Test Violation vs. Compliant Inputs
-              </div>
-              <p className="guide-step-desc">
-                Toggle between <b>Case 1 (Violation / High-Risk)</b> and{" "}
-                <b>Case 2 (Compliant / Safe Pass)</b> and click{" "}
-                <b>Run Evaluation</b> to compare live against{" "}
-                <code>{comparisonModelLabel}</code>.
-              </p>
-            </div>
-
-            <div className="guide-step">
-              <span className="guide-step-num">Step 03 · Inspect Proof</span>
-              <div className="guide-step-title">
-                Verify Speed, Accuracy &amp; Cost
-              </div>
-              <p className="guide-step-desc">
-                Review the 3-pillar proof scoreboard (latency speedup,
-                ground-truth accuracy, and cost per 1,000 calls) or switch to{" "}
-                <b>Client-Only Mode</b> via the top-right{" "}
-                <b>Backend Mode ⚙</b> menu.
-              </p>
-            </div>
-
-            <div>
-              <button
-                type="button"
-                className="ghost"
-                style={{ padding: "4px 8px", fontSize: 11.5 }}
-                onClick={() => setShowGuide(false)}
-                title="Dismiss guide"
-              >
-                Dismiss &times;
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
+      <Dialog open={showGuide} onClose={() => setShowGuide(false)} title="How to use this lab" maxWidth={620}>
+        <div className="modal-head"><h2>From a business problem to a decision</h2><button className="ghost" onClick={() => setShowGuide(false)}>Close &times;</button></div>
+        <div className="modal-body guide-body">
+          <p>Microsoft-Decision-1 answers structured yes/no, routing and rubric questions. This lab compares those decisions with {comparisonModelLabel} on the same input.</p>
+          <ol>
+            <li><strong>Choose a scenario</strong><p>Start with a business problem. Expand the scenario's purpose to understand which capability is being tested.</p></li>
+            <li><strong>Try both test cases</strong><p>Select a high-risk or safe input, then click Compare models. Selecting a scenario alone does not run inference.</p></li>
+            <li><strong>Check the decisions first</strong><p>Compare both models with the expected labels. Inspect details for probabilities, token costs and API responses. A passing example is not a model-wide accuracy claim.</p></li>
+          </ol>
+          <p>Use <b>Solutions</b> to browse industries or create your own scenario. Connection and execution mode are under <b>Options → Connection settings</b>.</p>
+          <button className="primary" onClick={() => { setShowGuide(false); setActiveTab("studio"); }}>Start comparing &rarr;</button>
+        </div>
+      </Dialog>
 
       {/* Compact notice only if user manually switched to Client-Only mode without configuring endpoint yet */}
       {azureConfig.mode === "frontend" && !isFrontendReady && (
@@ -582,7 +489,14 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Active Showcase Tab */}
+      <div id="workspace-content" tabIndex={-1}>
+      {activeTab in workflowDescriptions && (
+        <div className="workspace-intro">
+          <button className="text-button" onClick={() => setActiveTab("studio")}>&larr; Back to comparison</button>
+          <h1>{workflowDescriptions[activeTab as keyof typeof workflowDescriptions].title}</h1>
+          <p>{workflowDescriptions[activeTab as keyof typeof workflowDescriptions].problem} {workflowDescriptions[activeTab as keyof typeof workflowDescriptions].proof}</p>
+        </div>
+      )}
       <div style={{ display: activeTab === "runtime" ? "block" : "none" }}>
         <RuntimeView
           sendWs={sendWs}
@@ -608,6 +522,7 @@ export default function HomePage() {
           externalSample={studioExternalSample}
           externalTrigger={studioExternalTrigger}
           onOpenFramework={() => setActiveTab("framework")}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
       </div>
 
@@ -638,25 +553,19 @@ export default function HomePage() {
           onRunComparePair={handleRunComparePair}
         />
       </div>
+      </div>
 
       <AzureSettingsModal
+        key={settingsOpen ? "settings-open" : "settings-closed"}
         open={settingsOpen}
         config={azureConfig}
         onClose={() => setSettingsOpen(false)}
         onSave={handleUpdateAzureConfig}
       />
 
-      {demoVideoOpen && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setDemoVideoOpen(false)}
-        >
-          <div
-            className="modal-card"
-            style={{ maxWidth: 1020 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="modal-header">
+      <Dialog open={demoVideoOpen} onClose={() => setDemoVideoOpen(false)} title="Product tour" maxWidth={1020}>
+          <div>
+            <div className="modal-head">
               <div>
                 <div className="section-kicker" style={{ marginBottom: 4 }}>
                   Product Tour · Playwright 1080p Cut · Azure Neural TTS Narration
@@ -699,7 +608,7 @@ export default function HomePage() {
                 playsInline
                 style={{
                   width: "100%",
-                  borderRadius: "var(--radius-md)",
+                  borderRadius: "var(--radius)",
                   border: "1px solid var(--border)",
                   background: "#0D0E0D",
                   display: "block",
@@ -750,38 +659,15 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-        </div>
-      )}
+      </Dialog>
 
       {/* Footer */}
       <footer className="footer">
-        <span>
-          Execution Mode:{" "}
-          <b>
-            {azureConfig.mode === "backend"
-              ? "Frontend + Backend Server (Default)"
-              : "Client-Only Browser Direct"}
-          </b>{" "}
-          · Endpoint:{" "}
-          <b>
-            {azureConfig.mode === "frontend"
-              ? azureConfig.endpoint || "(Configure in Connection Settings)"
-              : health?.endpoint ||
-                "https://icsuaaisea.cognitiveservices.azure.com"}
-          </b>{" "}
-          · Auth: <b>Microsoft Entra ID</b>
-        </span>
-        <span>
-          Models:{" "}
-          <b>
-            Microsoft-Decision-1 (
-            {azureConfig.mode === "frontend"
-              ? azureConfig.decisionDeployment
-              : health?.decisionDeployment || "Decision-1"}
-            )
-          </b>{" "}
-          vs <b>{comparisonModelLabel}</b> · Pricing: <b>$0.042/1M input · $0 output</b>
-        </span>
+        <span>Microsoft-Decision-1 / Azure AI Foundry</span>
+        <button className="text-button" onClick={() => setSettingsOpen(true)}>
+          <span className={`dot ${effectiveReady && (health?.ok ?? true) ? "ok" : "warn"}`} />
+          {azureConfig.mode === "backend" ? "Backend server" : "Client-only"} · {effectiveReady && (health?.ok ?? true) ? "Connected" : "Setup needed"}
+        </button>
       </footer>
     </div>
   );

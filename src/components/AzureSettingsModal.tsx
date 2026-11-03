@@ -9,6 +9,7 @@ import {
   signInWithEntraPopup,
 } from "@/lib/client-foundry";
 import { CustomSelect } from "./CustomSelect";
+import { Dialog } from "./Dialog";
 
 interface Props {
   open: boolean;
@@ -131,11 +132,9 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <Dialog open={open} onClose={onClose} title="Connection settings" maxWidth={680}>
       <div
-        className="modal-window"
-        style={{ maxWidth: 680 }}
-        onClick={(e) => e.stopPropagation()}
+        className="settings-content"
       >
         <div className="modal-head">
           <div>
@@ -591,6 +590,6 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
           </div>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
