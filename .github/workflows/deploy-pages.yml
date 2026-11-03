@@ -36,7 +36,7 @@ jobs:
       - name: Build static export for GitHub Pages (Frontend-Only Mode)
         env:
           GITHUB_PAGES: "true"
-          NEXT_PUBLIC_BASE_PATH: "/system-1"
+          NEXT_PUBLIC_BASE_PATH: ""
         run: |
           rm -rf src/app/api
           npx next build
