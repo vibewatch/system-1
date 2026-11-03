@@ -31,16 +31,16 @@ import {
 const CUSTOM_SOLUTIONS_LS_KEY = "ms_decision1_custom_solutions_v1";
 const DEMO_MODE_KEY = "ms_decision1_demo_mode_v2";
 const TECHNICAL_DEMO = {
-  src: "./demo-microsoft-decision-1.mp4?v=stream-triage-v2",
-  captions: "./demo-microsoft-decision-1.en.vtt?v=stream-triage-v2",
-  duration: "1:55",
+  src: "./demo-microsoft-decision-1.mp4?v=stream-triage-conversation-v3",
+  captions: "./demo-microsoft-decision-1.en.vtt?v=stream-triage-conversation-v3",
+  duration: "2:58",
   chapters: [
-    { label: "Recording context · 0:00", sec: 0 },
-    { label: "Stream events · 0:10", sec: 10.498625 },
-    { label: "Typed decisions · 0:20", sec: 20.460583 },
-    { label: "Triage pipeline · 0:43", sec: 43.247375 },
-    { label: "Queue metrics · 1:02", sec: 62.357667 },
-    { label: "Replay & live · 1:41", sec: 101.149334 },
+    { label: "Purpose & model · 0:00", sec: 0 },
+    { label: "Customer context · 0:18", sec: 18.175 },
+    { label: "Signals & outcome · 0:33", sec: 33.7375 },
+    { label: "Inbox triage · 1:09", sec: 69.375 },
+    { label: "Triage results · 2:18", sec: 138.5125 },
+    { label: "Where it fits · 2:38", sec: 158.875 },
   ],
 };
 
@@ -723,7 +723,7 @@ export default function HomePage() {
             <div className="modal-head" style={{ flexWrap: "wrap", gap: 12 }}>
               <div>
                 <div className="section-kicker" style={{ marginBottom: 4 }}>
-                  Technical Demo · Recorded Azure Events · English Narration
+                  Conversational Walkthrough · Recorded Azure Results
                 </div>
                 <h3 style={{ fontSize: "var(--font-lg)", fontWeight: 700 }}>
                   Stream &amp; Triage Walkthrough ({TECHNICAL_DEMO.duration})
