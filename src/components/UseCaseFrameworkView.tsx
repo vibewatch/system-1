@@ -33,6 +33,7 @@ interface Props {
     decision1?: DecisionRunResult;
     terra?: DecisionRunResult;
   }>;
+  replayMode?: boolean;
 }
 
 interface CaseBenchmarkResult {
@@ -93,6 +94,7 @@ export function UseCaseFrameworkView({
   onSaveCustomUseCase,
   onDeleteCustomUseCase,
   onRunComparePair,
+  replayMode = false,
 }: Props) {
   const [selectedIndustry, setSelectedIndustry] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -556,6 +558,8 @@ export function UseCaseFrameworkView({
             <button
               type="button"
               className="primary"
+              disabled={replayMode}
+              title={replayMode ? "Return to live mode to create a new solution" : undefined}
               onClick={() => setShowBuilderModal(true)}
             >
               Create your solution &rarr;
@@ -821,6 +825,7 @@ export function UseCaseFrameworkView({
                       type="button"
                       className="ghost"
                       style={{ color: "var(--danger)" }}
+                      disabled={replayMode}
                       onClick={() => onDeleteCustomUseCase(uc.id)}
                     >
                       Delete

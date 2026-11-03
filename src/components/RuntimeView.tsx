@@ -379,6 +379,7 @@ export default function RuntimeView({
       const nodes: React.ReactNode[] = [];
       let cursor = t.contentStart;
       segMarkers.forEach((m, mIdx) => {
+        if (m.start < cursor) return;
         if (m.start > cursor) {
           nodes.push(transcript.slice(cursor, m.start));
         }

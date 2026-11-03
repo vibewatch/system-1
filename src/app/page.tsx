@@ -8,6 +8,8 @@ import AgentFormView from "@/components/AgentFormView";
 import { UseCaseFrameworkView } from "@/components/UseCaseFrameworkView";
 import { AzureSettingsModal } from "@/components/AzureSettingsModal";
 import { Dialog } from "@/components/Dialog";
+import { ReplayControls } from "@/components/ReplayControls";
+import { ReplayDispatcher, parseReplayBundle, type ReplayBundle, type ReplayProgress } from "@/lib/replay";
 import {
   STUDIO_SAMPLES,
   type StudioSample,
@@ -24,6 +26,8 @@ import {
 } from "@/lib/client-foundry";
 
 const CUSTOM_SOLUTIONS_LS_KEY = "ms_decision1_custom_solutions_v1";
+const REPLAY_STORAGE_KEY = "ms_decision1_replay_enabled_v1";
+const REPLAY_URL = `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/replays/showcase.json`;
 
 export interface WsIncomingMessage {
   event: string;
@@ -46,6 +50,18 @@ export default function HomePage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [demoVideoOpen, setDemoVideoOpen] = useState(false);
   const demoVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const [replayEnabled, setReplayEnabled] = useState(false);
+  const [replayOpen, setReplayOpen] = useState(false);
+  const [replayBundle, setReplayBundle] = useState<ReplayBundle | null>(null);
+  const [replayLoading, setReplayLoading] = useState(false);
+  const [replayError, setReplayError] = useState("");
+  const [replayProgress, setReplayProgress] = useState<ReplayProgress | null>(null);
+  const [replaySpeed, setReplaySpeed] = useState(1);
+  const replayDispatcherRef = useRef<ReplayDispatcher | null>(null);
+  const replayLoadRef = useRef(false);
+  const replayEnabledRef = useRef(replayEnabled);
+  replayEnabledRef.current = replayEnabled;
 
   useEffect(() => {
     const closeMenus = (event: MouseEvent | KeyboardEvent) => {
@@ -76,17 +92,48 @@ export default function HomePage() {
   >(null);
 
   const allUseCases = useMemo(() => {
+    if (replayEnabled && replayBundle) return replayBundle.scenarios;
     const customIds = new Set(customUseCases.map((c) => c.id));
     return [
       ...customUseCases,
       ...STUDIO_SAMPLES.filter((s) => !customIds.has(s.id)),
     ];
-  }, [customUseCases]);
+  }, [customUseCases, replayEnabled, replayBundle]);
 
   useEffect(() => {
     const cfg = loadAzureConfig();
     setAzureConfig(cfg);
+    try { setReplayEnabled(window.localStorage.getItem(REPLAY_STORAGE_KEY) === "true"); } catch {}
+    setConfigLoaded(true);
   }, []);
+
+  const loadReplay = useCallback(async (file?: File) => {
+    if (replayLoadRef.current) return;
+    replayLoadRef.current = true;
+    setReplayLoading(true);
+    setReplayError("");
+    try {
+      let value: unknown;
+      if (file) {
+        if (file.size > 25 * 1024 * 1024) throw new Error("Replay files must be smaller than 25 MB.");
+        value = JSON.parse(await file.text());
+      } else {
+        const response = await fetch(REPLAY_URL);
+        if (!response.ok) throw new Error(`Could not load recordings (HTTP ${response.status}). You can import a downloaded replay file.`);
+        value = await response.json();
+      }
+      setReplayBundle(parseReplayBundle(value));
+    } catch (error) {
+      setReplayError((error as Error).message);
+    } finally {
+      replayLoadRef.current = false;
+      setReplayLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if ((replayEnabled || replayOpen) && !replayBundle && !replayLoading && !replayError) void loadReplay();
+  }, [replayEnabled, replayOpen, replayBundle, replayLoading, replayError, loadReplay]);
 
   useEffect(() => {
     let localList: StudioSample[] = [];
@@ -103,7 +150,9 @@ export default function HomePage() {
       setCustomUseCases(localList);
     }
 
-    if (loadAzureConfig().mode === "backend") {
+    let savedReplay = false;
+    try { savedReplay = window.localStorage.getItem(REPLAY_STORAGE_KEY) === "true"; } catch {}
+    if (loadAzureConfig().mode === "backend" && !savedReplay) {
       fetch("/api/usecases")
         .then((r) => r.json())
         .then((d) => {
@@ -121,6 +170,7 @@ export default function HomePage() {
   }, []);
 
   const handleSaveCustomUseCase = useCallback(async (uc: StudioSample) => {
+    if (replayEnabled) return;
     setCustomUseCases((prev) => {
       const next = [uc, ...prev.filter((item) => item.id !== uc.id)];
       try {
@@ -146,9 +196,10 @@ export default function HomePage() {
     } catch {
       // In pure frontend-only static hosting, localStorage persists the solution
     }
-  }, []);
+  }, [replayEnabled]);
 
   const handleDeleteCustomUseCase = useCallback(async (id: string) => {
+    if (replayEnabled) return;
     setCustomUseCases((prev) => {
       const next = prev.filter((item) => item.id !== id);
       try {
@@ -172,7 +223,7 @@ export default function HomePage() {
     } catch {
       // ignore
     }
-  }, []);
+  }, [replayEnabled]);
 
   const handleLaunchInStudio = useCallback(
     (uc: StudioSample, _autoRun = true) => {
@@ -213,12 +264,35 @@ export default function HomePage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!replayEnabled || !replayBundle) return;
+    const dispatcher = new ReplayDispatcher(replayBundle, (message) => {
+      if (message.event === "health_status") setHealth(message.data);
+      if (message.event === "error") setReplayError(message.data.message);
+      listenersRef.current.forEach((handler) => handler(message));
+    }, setReplayProgress);
+    replayDispatcherRef.current = dispatcher;
+    dispatcher.setSpeed(replaySpeed);
+    dispatcher.dispatch("health_check");
+    return () => {
+      dispatcher.stop();
+      replayDispatcherRef.current = null;
+    };
+    // Playback speed is updated independently so it does not reset a recording.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replayEnabled, replayBundle]);
+
+  useEffect(() => {
+    replayDispatcherRef.current?.setSpeed(replaySpeed);
+  }, [replaySpeed]);
+
   // Keep browser dispatcher synced with latest azureConfig
   useEffect(() => {
     if (!browserDispatcherRef.current) {
       browserDispatcherRef.current = new BrowserFoundryDispatcher(
         azureConfig,
         (msg) => {
+          if (replayEnabledRef.current) return;
           setWsEventCount((c) => c + 1);
           if (msg.event === "health_status") {
             setHealth(msg.data);
@@ -230,13 +304,17 @@ export default function HomePage() {
       browserDispatcherRef.current.updateConfig(azureConfig);
     }
 
-    if (azureConfig.mode === "frontend") {
+    if (configLoaded && !replayEnabled && azureConfig.mode === "frontend") {
       browserDispatcherRef.current.dispatch("health_check");
     }
-  }, [azureConfig]);
+  }, [azureConfig, configLoaded, replayEnabled]);
 
   const sendWs = useCallback(
     (action: string, payload: Record<string, any> = {}) => {
+      if (replayEnabled) {
+        setReplayError("");
+        return replayDispatcherRef.current?.dispatch(action, payload) ?? false;
+      }
       if (azureConfig.mode === "frontend") {
         browserDispatcherRef.current?.dispatch(action, payload);
         return true;
@@ -248,11 +326,15 @@ export default function HomePage() {
       }
       return false;
     },
-    [azureConfig.mode]
+    [azureConfig.mode, replayEnabled]
   );
 
   const handleRunComparePair = useCallback(
     async (state: unknown, questions: DecisionQuestion[]) => {
+      if (replayEnabled) {
+        if (!replayDispatcherRef.current) throw new Error("Load a replay file before verifying a suite.");
+        return replayDispatcherRef.current.comparePair(state, questions);
+      }
       if (azureConfig.mode === "frontend") {
         const [decision1, terra] = await Promise.all([
           callDecision1Browser(azureConfig, state, questions),
@@ -271,7 +353,7 @@ export default function HomePage() {
         return await res.json();
       }
     },
-    [azureConfig]
+    [azureConfig, replayEnabled]
   );
 
   useEffect(() => {
@@ -279,7 +361,7 @@ export default function HomePage() {
   }, [theme]);
 
   useEffect(() => {
-    if (azureConfig.mode !== "backend") {
+    if (!configLoaded || replayEnabled || azureConfig.mode !== "backend") {
       setWsConnected(false);
       if (wsRef.current) {
         wsRef.current.close();
@@ -336,22 +418,22 @@ export default function HomePage() {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (wsRef.current) wsRef.current.close();
     };
-  }, [azureConfig.mode]);
+  }, [azureConfig.mode, replayEnabled, configLoaded]);
 
   const refreshHealth = () => {
     sendWs("health_check");
   };
 
   const handleUpdateAzureConfig = (next: AzureClientConfig) => {
+    setReplayEnabled(false);
+    setReplayError("");
+    try { window.localStorage.setItem(REPLAY_STORAGE_KEY, "false"); } catch {}
     setAzureConfig(next);
     saveAzureConfig(next);
     if (next.mode === "backend") {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ action: "health_check" }));
       }
-    } else {
-      browserDispatcherRef.current?.updateConfig(next);
-      browserDispatcherRef.current?.dispatch("health_check");
     }
   };
 
@@ -361,10 +443,10 @@ export default function HomePage() {
     Boolean(azureConfig.accessToken.trim());
 
   const effectiveReady =
-    azureConfig.mode === "frontend" ? isFrontendReady : wsConnected;
+    replayEnabled ? Boolean(replayBundle && !replayLoading) : azureConfig.mode === "frontend" ? isFrontendReady : wsConnected;
 
   const comparisonModelLabel =
-    azureConfig.mode === "frontend"
+    replayEnabled && replayBundle ? replayBundle.models.terra : azureConfig.mode === "frontend"
       ? azureConfig.terraDeployment || "gpt-6.1-terra"
       : health?.terraDeployment || "gpt-6.1-terra";
 
@@ -420,6 +502,7 @@ export default function HomePage() {
             <summary className="tools-trigger">Options <span aria-hidden="true">⌄</span></summary>
             <div className="header-menu-panel tools-panel" onClick={(event) => { if ((event.target as HTMLElement).closest("button") && toolsMenuRef.current) toolsMenuRef.current.open = false; }}>
               <button onClick={() => setSettingsOpen(true)}><strong>Connection settings</strong><small>{azureConfig.mode === "backend" ? "Backend server (default)" : "Client-only browser"} · {effectiveReady && (health?.ok ?? true) ? "Connected" : "Setup needed"}</small></button>
+              <button onClick={() => setReplayOpen(true)}><strong>Demo replay</strong><small>{replayEnabled ? "Recorded playback enabled" : "Use recorded results · no Azure calls"}</small></button>
               <button onClick={() => setShowGuide(true)}><strong>How to use this lab</strong><small>A three-step guide</small></button>
               <button onClick={() => setDemoVideoOpen(true)}><strong>Watch the product tour</strong><small>69 seconds · narrated demo</small></button>
               <button onClick={() => setTheme((t) => t === "light" ? "dark" : "light")}><strong>{theme === "light" ? "Switch to dark appearance" : "Switch to light appearance"}</strong></button>
@@ -427,6 +510,31 @@ export default function HomePage() {
           </details>
         </div>
       </header>
+
+      {replayEnabled && <div className="replay-banner">
+        <div><strong>Recorded replay</strong><span>{replayBundle ? `Azure run from ${new Date(replayBundle.recordedAt).toLocaleDateString()} · no live model calls` : "Loading recordings…"}</span></div>
+        {replayProgress && <span className="replay-progress-label">{replayProgress.paused ? "Paused" : replayProgress.playing ? "Playing" : "Complete"} · {(replayProgress.elapsedMs / 1000).toFixed(1)}s / {(replayProgress.durationMs / 1000).toFixed(1)}s</span>}
+        {replayProgress?.playing && <button className="text-button" onClick={() => replayProgress.paused ? replayDispatcherRef.current?.resume() : replayDispatcherRef.current?.pause()}>{replayProgress.paused ? "Resume" : "Pause"}</button>}
+        <button className="text-button" onClick={() => setReplayOpen(true)}>Replay controls</button>
+        {replayError && <p role="alert" className="comparison-error">{replayError}</p>}
+      </div>}
+
+      <ReplayControls
+        open={replayOpen} onClose={() => setReplayOpen(false)} bundle={replayBundle} enabled={replayEnabled}
+        loading={replayLoading} error={replayError} progress={replayProgress} speed={replaySpeed}
+        onEnable={(enabled) => {
+          setReplayEnabled(enabled);
+          setReplayError("");
+          setActiveTab("studio");
+          setStudioExternalSample(null);
+          setStudioExternalTrigger(0);
+          try { window.localStorage.setItem(REPLAY_STORAGE_KEY, String(enabled)); } catch {}
+        }}
+        onLoadDefault={() => void loadReplay()}
+        onImport={(file) => void loadReplay(file)}
+        onPause={() => replayDispatcherRef.current?.pause()} onResume={() => replayDispatcherRef.current?.resume()}
+        onStop={() => replayDispatcherRef.current?.stop()} onSpeed={setReplaySpeed}
+      />
 
       <Dialog open={showGuide} onClose={() => setShowGuide(false)} title="How to use this lab" maxWidth={620}>
         <div className="modal-head"><h2>From a business problem to a decision</h2><button className="ghost" onClick={() => setShowGuide(false)}>Close &times;</button></div>
@@ -443,7 +551,7 @@ export default function HomePage() {
       </Dialog>
 
       {/* Compact notice only if user manually switched to Client-Only mode without configuring endpoint yet */}
-      {azureConfig.mode === "frontend" && !isFrontendReady && (
+      {!replayEnabled && azureConfig.mode === "frontend" && !isFrontendReady && (
         <div className="guide-strip">
           <div
             style={{
@@ -499,6 +607,7 @@ export default function HomePage() {
       )}
       <div style={{ display: activeTab === "runtime" ? "block" : "none" }}>
         <RuntimeView
+          key={replayEnabled ? `replay-runtime-${replayBundle?.recordedAt}` : "live-runtime"}
           sendWs={sendWs}
           subscribeWs={subscribeWs}
           wsConnected={effectiveReady}
@@ -508,12 +617,13 @@ export default function HomePage() {
 
       <div style={{ display: activeTab === "studio" ? "block" : "none" }}>
         <StudioCompareView
+          key={replayEnabled ? `replay-studio-${replayBundle?.recordedAt}` : "live-studio"}
           sendWs={sendWs}
           subscribeWs={subscribeWs}
           wsConnected={effectiveReady}
           comparisonModelName={comparisonModelLabel}
           endpointUrl={
-            azureConfig.mode === "frontend" && azureConfig.endpoint
+            replayEnabled && replayBundle ? replayBundle.endpoint : azureConfig.mode === "frontend" && azureConfig.endpoint
               ? azureConfig.endpoint
               : health?.endpoint ||
                 "https://<your-foundry-resource>.cognitiveservices.azure.com"
@@ -523,19 +633,23 @@ export default function HomePage() {
           externalTrigger={studioExternalTrigger}
           onOpenFramework={() => setActiveTab("framework")}
           onOpenSettings={() => setSettingsOpen(true)}
+          replayMode={replayEnabled}
         />
       </div>
 
       <div style={{ display: activeTab === "triage" ? "block" : "none" }}>
         <TriageScaleView
+          key={replayEnabled ? "replay-triage" : "live-triage"}
           sendWs={sendWs}
           subscribeWs={subscribeWs}
           wsConnected={effectiveReady}
+          replayMode={replayEnabled}
         />
       </div>
 
       <div style={{ display: activeTab === "form" ? "block" : "none" }}>
         <AgentFormView
+          key={replayEnabled ? "replay-form" : "live-form"}
           sendWs={sendWs}
           subscribeWs={subscribeWs}
           wsConnected={effectiveReady}
@@ -544,6 +658,7 @@ export default function HomePage() {
 
       <div style={{ display: activeTab === "framework" ? "block" : "none" }}>
         <UseCaseFrameworkView
+          key={replayEnabled ? `replay-framework-${replayBundle?.recordedAt}` : "live-framework"}
           allUseCases={allUseCases}
           comparisonModelName={comparisonModelLabel}
           onLaunchInStudio={handleLaunchInStudio}
@@ -551,6 +666,7 @@ export default function HomePage() {
           onSaveCustomUseCase={handleSaveCustomUseCase}
           onDeleteCustomUseCase={handleDeleteCustomUseCase}
           onRunComparePair={handleRunComparePair}
+          replayMode={replayEnabled}
         />
       </div>
       </div>
@@ -666,7 +782,7 @@ export default function HomePage() {
         <span>Microsoft-Decision-1 / Azure AI Foundry</span>
         <button className="text-button" onClick={() => setSettingsOpen(true)}>
           <span className={`dot ${effectiveReady && (health?.ok ?? true) ? "ok" : "warn"}`} />
-          {azureConfig.mode === "backend" ? "Backend server" : "Client-only"} · {effectiveReady && (health?.ok ?? true) ? "Connected" : "Setup needed"}
+          {replayEnabled ? "Recorded replay" : azureConfig.mode === "backend" ? "Backend server" : "Client-only"} · {effectiveReady && (health?.ok ?? true) ? "Ready" : "Setup needed"}
         </button>
       </footer>
     </div>

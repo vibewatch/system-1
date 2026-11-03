@@ -11,6 +11,7 @@ interface TriageScaleViewProps {
     handler: (msg: { event: string; data: any; ts: number }) => void
   ) => () => void;
   wsConnected: boolean;
+  replayMode?: boolean;
 }
 
 interface FeedItemState {
@@ -34,6 +35,7 @@ export default function TriageScaleView({
   sendWs,
   subscribeWs,
   wsConnected,
+  replayMode = false,
 }: TriageScaleViewProps) {
   const [rate, setRate] = useState(10);
   const [running, setRunning] = useState(false);
@@ -46,6 +48,8 @@ export default function TriageScaleView({
   const [terraDoneCount, setTerraDoneCount] = useState(0);
   const [terraWaitTotal, setTerraWaitTotal] = useState(0);
   const [startTime, setStartTime] = useState<number>(0);
+  const [recordedElapsedMs, setRecordedElapsedMs] = useState(0);
+  const recordedStartRef = useRef(0);
 
   const [d1FinishInfo, setD1FinishInfo] = useState<{
     terraRemaining: number;
@@ -56,7 +60,11 @@ export default function TriageScaleView({
   const d1WaitSumRef = useRef(0);
 
   useEffect(() => {
-    return subscribeWs(({ event, data }) => {
+    return subscribeWs(({ event, data, ts }) => {
+      if (replayMode && event.startsWith("triage_")) {
+        if (event === "triage_started") recordedStartRef.current = ts;
+        setRecordedElapsedMs(Math.max(0, ts - recordedStartRef.current));
+      }
       if (event === "triage_started") {
         setRunning(true);
         setItems({});
@@ -143,7 +151,7 @@ export default function TriageScaleView({
         setRunning(false);
       }
     });
-  }, [subscribeWs]);
+  }, [subscribeWs, replayMode]);
 
   const toggleRun = () => {
     if (running) {
@@ -155,7 +163,7 @@ export default function TriageScaleView({
   };
 
   const N = TRIAGE_FEED.messages.length;
-  const elapsedSec = startTime
+  const elapsedSec = replayMode ? Math.max(0.5, recordedElapsedMs / 1000) : startTime
     ? Math.max(0.5, (Date.now() - startTime) / 1000)
     : 1;
   const d1InQueue = Math.max(0, arrivedCount - d1DoneCount);

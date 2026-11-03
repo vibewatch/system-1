@@ -7,10 +7,10 @@ Interactive Next.js 15 enterprise showcase and head-to-head correctness & cost b
 
 ## Key Capabilities
 
-1. **Frontend-Only Mode (Default) with Microsoft Entra ID Login**
+1. **Backend Server Mode (Default), with Optional Client-Only Entra ID Login**
    - Connect directly from your browser to your own Azure AI Foundry endpoint (`https://<your-resource>.cognitiveservices.azure.com`) and configure your **`Microsoft-Decision-1`** and comparison LLM deployments.
    - Authenticate via **Microsoft Entra ID OAuth2 PKCE Popup** (`@azure/msal-browser`), **Entra ID Bearer Token** (`az account get-access-token --resource https://cognitiveservices.azure.com --query accessToken -o tsv`), or **Foundry API Key**.
-   - Optionally switch to **Backend Server Mode** (`WebSocket` + Node server using `DefaultAzureCredential` / `az cli`).
+   - Default **Backend Server Mode** uses `WebSocket` + the Node server's `DefaultAzureCredential` / `az cli`. Select client-only mode to use your own endpoint from the browser.
 
 2. **5 Interactive Decision Workflows**
    - **01 · Stream + Decide**: Streams live conversations word-by-word while `Microsoft-Decision-1` re-evaluates `NOUL`, `CHOICE`, and `SCORE` questions on every word with live probability sparklines and mind-change markers.
@@ -27,4 +27,38 @@ npm run build
 PORT=3000 npm run start
 ```
 
-Open **`http://localhost:3000`** and click **⚙ Azure Endpoint & Entra ID** in the top navigation bar to configure your Azure AI Foundry endpoint and Microsoft Entra ID credentials (or switch to Backend Server Mode).
+Open **`http://localhost:3000`** and use **Options → Connection settings** to configure execution mode and Azure credentials.
+
+## Recorded demo replay
+
+Open **Options → Demo replay → Use recorded demos**. The normal comparison,
+conversation, queue and claims controls then play recorded Azure event timelines,
+without model calls or Entra ID sign-in. Pause/resume and 0.5×/1×/2×/4× playback
+are available. Latency, token usage and costs remain those of the original run;
+replay is explicitly labelled and is not a new performance benchmark.
+
+The included file contains **41 real Azure recordings**: 33 test cases for
+17 solutions (including the saved custom BGP gate), four conversations, three
+triage rates, and one claims workflow.
+The portable recording is **[`public/replays/showcase.json`](public/replays/showcase.json)**.
+Download it from the replay dialog, or import a version-1 JSON file there.
+Imported recordings last for the current tab; reload restores the bundled file.
+Changed inputs or questions have no recorded result and require live mode.
+The default live execution mode remains **Frontend + Backend Server**; client-only
+mode is available under **Options → Connection settings**.
+
+To regenerate all built-in test cases, all four conversation scenarios, triage at
+5/10/20 messages per second, and the claims workflow against your authenticated
+local backend:
+
+```bash
+npm run replay:record
+npm run replay:test
+```
+
+Use `npm run replay:record -- --include-custom` to include saved custom scenarios.
+`REPLAY_WS_URL` and `REPLAY_OUTPUT` override the server and destination.
+Successful sessions are checkpointed so a failed run can resume; the final file
+is published only after all requested recordings complete successfully.
+Files contain demo inputs, model outputs and event timing, never authorization
+headers. Review custom data before committing or sharing recordings.

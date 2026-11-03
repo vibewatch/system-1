@@ -1950,6 +1950,87 @@ mark.src.focus {
   padding: 20px 22px;
 }
 
+.replay-banner {
+  width: calc(100% - 48px);
+  max-width: 1232px;
+  margin: 20px auto 0;
+  padding: 12px 16px;
+  border-left: 3px solid var(--primary);
+  background: var(--primary-soft);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+}
+
+.replay-banner > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-right: auto;
+}
+
+.replay-banner span,
+.replay-settings p {
+  color: var(--text-muted);
+}
+
+.replay-banner .comparison-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.replay-settings,
+.replay-file-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.replay-settings p {
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 0;
+}
+
+.replay-file-summary {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.replay-file-summary span {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.replay-file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.replay-import {
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.replay-import input {
+  max-width: 230px;
+  font-size: 12px;
+}
+
+.replay-file-summary progress {
+  width: 100%;
+  accent-color: var(--primary);
+}
+
 /* A quiet reading surface; comparison is the primary task. */
 .brand-home {
   border: 0;
@@ -2831,4 +2912,3 @@ button.compare-button {
     max-width: 100%;
   }
 }
-

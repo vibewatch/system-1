@@ -67,7 +67,7 @@ export default function AgentFormView({
         }));
       } else if (event === "agent_done") {
         setRunning(false);
-        setDone(true);
+        setDone(!data.cancelled);
       }
     });
   }, [subscribeWs]);
@@ -80,7 +80,7 @@ export default function AgentFormView({
     setFilledFields({});
     setSteps([]);
     setDone(false);
-    sendWs("run_agent_form", { content: emailText });
+    if (!sendWs("run_agent_form", { content: emailText })) setRunning(false);
   };
 
   const renderHighlightedEmail = () => {

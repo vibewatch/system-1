@@ -25,13 +25,14 @@ interface StudioCompareViewProps {
   externalTrigger?: number;
   onOpenFramework?: () => void;
   onOpenSettings?: () => void;
+  replayMode?: boolean;
 }
 
 export default function StudioCompareView({
   sendWs, subscribeWs, wsConnected,
   comparisonModelName = "gpt-6.1-terra",
   endpointUrl = "https://icsuaaisea.cognitiveservices.azure.com",
-  allUseCases, externalSample, externalTrigger, onOpenFramework, onOpenSettings,
+  allUseCases, externalSample, externalTrigger, onOpenFramework, onOpenSettings, replayMode = false,
 }: StudioCompareViewProps) {
   const samples = allUseCases?.length ? allUseCases : STUDIO_SAMPLES;
   const [sampleId, setSampleId] = useState(samples[0].id);
@@ -119,7 +120,7 @@ export default function StudioCompareView({
     setRacing(true);
     if (!sendWs("run_compare", { state: stateText, questions, mode: "compare" })) {
       setRacing(false);
-      setError("Not connected. Open connection settings to continue.");
+      setError(replayMode ? "No recording matches this input or question set. Choose a recorded test case or return to live mode." : "Not connected. Open connection settings to continue.");
     }
   };
   const markEdited = () => {
@@ -220,9 +221,9 @@ export default function StudioCompareView({
           <div className="input-document" tabIndex={0}>{stateText}</div>
           <div className="run-actions">
             <button className="primary compare-button" disabled={racing || !wsConnected || !questions.length || !stateText.trim()} onClick={runComparison}>
-              {racing ? "Comparing models…" : "Compare models"} {!racing && <span aria-hidden="true">&rarr;</span>}
+              {racing ? replayMode ? "Replaying comparison…" : "Comparing models…" : replayMode ? "Replay comparison" : "Compare models"} {!racing && <span aria-hidden="true">&rarr;</span>}
             </button>
-            <span>{questions.length} questions · runs only when requested</span>
+            <span>{questions.length} questions · {replayMode ? "recorded results, no model calls" : "runs only when requested"}</span>
           </div>
           {!wsConnected && <button className="connection-prompt" onClick={onOpenSettings}>Set up a connection to run this test &rarr;</button>}
         </section>
