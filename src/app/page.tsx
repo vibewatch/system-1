@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import RuntimeView from "@/components/RuntimeView";
+import type { ShowcaseMode } from "@/components/DecisionStoryView";
 import StudioCompareView from "@/components/StudioCompareView";
 import TriageScaleView from "@/components/TriageScaleView";
 import AgentFormView from "@/components/AgentFormView";
@@ -40,6 +41,7 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState<
     "studio" | "framework" | "runtime" | "triage" | "form"
   >("runtime");
+  const [showcaseMode, setShowcaseMode] = useState<ShowcaseMode>("solution");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [showGuide, setShowGuide] = useState(false);
   const toolsMenuRef = useRef<HTMLDetailsElement>(null);
@@ -490,16 +492,14 @@ export default function HomePage() {
   };
 
   return (
-    <div className="app-shell">
+    <div className="app-shell scene-app">
       <a className="skip-link" href="#workspace-content">Skip to workspace</a>
       <header className="topbar">
         <button className="brand brand-home" onClick={() => setActiveTab("runtime")} aria-label="Microsoft-Decision-1 home">
           <div className="brand-mark">M1</div>
           <div>
-            <span className="brand-title">
-              Microsoft-Decision-1
-            </span>
-            <span className="brand-sub">A decision lab</span>
+            <span className="brand-title">System / 1</span>
+            <span className="brand-sub">The Decision-1 showcase</span>
           </div>
         </button>
 
@@ -509,26 +509,19 @@ export default function HomePage() {
             onClick={() => setActiveTab("runtime")}
             aria-current={activeTab === "runtime" ? "page" : undefined}
           >
-            Live story
+            Showcase
           </button>
           <button
             className={`nav-tab ${activeTab === "studio" ? "active" : ""}`}
             onClick={() => setActiveTab("studio")}
             aria-current={activeTab === "studio" ? "page" : undefined}
           >
-            Compare
-          </button>
-          <button
-            className={`nav-tab ${activeTab === "framework" ? "active" : ""}`}
-            onClick={() => setActiveTab("framework")}
-            aria-current={activeTab === "framework" ? "page" : undefined}
-          >
-            Solutions
+            Test lab
           </button>
           <details className="header-menu" ref={examplesMenuRef}>
-            <summary className={`nav-tab ${["triage", "form"].includes(activeTab) ? "active" : ""}`}>More demos <span aria-hidden="true">⌄</span></summary>
+            <summary className={`nav-tab ${["framework", "triage", "form"].includes(activeTab) ? "active" : ""}`}>Explore <span aria-hidden="true">⌄</span></summary>
             <div className="header-menu-panel">
-              {([["triage", "Queue triage", "Compare throughput at scale"], ["form", "Claims workflow", "Policy gates and form extraction"]] as const).map(([tab, title, description]) =>
+              {([["framework", "Build a solution", "Browse industries and add your own case"], ["triage", "Queue triage", "Compare throughput at scale"], ["form", "Claims workflow", "Policy gates and form extraction"]] as const).map(([tab, title, description]) =>
                 <button key={tab} onClick={() => { setActiveTab(tab); if (examplesMenuRef.current) examplesMenuRef.current.open = false; }} aria-current={activeTab === tab ? "page" : undefined}>
                   <strong>{title}</strong><small>{description}</small>
                 </button>
@@ -586,7 +579,7 @@ export default function HomePage() {
             <li><strong>Try both test cases</strong><p>Select a high-risk or safe input, then click Compare models. Selecting a scenario alone does not run inference.</p></li>
             <li><strong>Check the decisions first</strong><p>Compare both models with the expected labels. Inspect details for probabilities, token costs and API responses. A passing example is not a model-wide accuracy claim.</p></li>
           </ol>
-          <p>Use <b>Solutions</b> to browse industries or create your own scenario. Connection and execution mode are under <b>Options → Connection settings</b>.</p>
+          <p>Use <b>Explore → Build a solution</b> to browse industries or create your own scenario. Connection and execution mode are under <b>Options → Connection settings</b>.</p>
           <button className="primary" onClick={() => { setShowGuide(false); setActiveTab("studio"); }}>Start comparing &rarr;</button>
         </div>
       </Dialog>
@@ -656,6 +649,9 @@ export default function HomePage() {
           replayMode={replayEnabled}
           replayLoading={replayLoading || pendingStory !== null}
           comparisonModelName={comparisonModelLabel}
+          showcaseMode={showcaseMode}
+          animationPaused={Boolean(replayProgress?.paused)}
+          onShowcaseModeChange={setShowcaseMode}
           onPlayRecorded={playRecordedStory}
           onOpenWorkbench={(sampleId = "refund-authorization") => handleLaunchInStudio(allUseCases.find((sample) => sample.id === sampleId) || STUDIO_SAMPLES[0])}
           onOpenTriage={() => setActiveTab("triage")}

@@ -10,7 +10,7 @@ import {
 import type { ExtractedSpan, NormalizedDecision } from "@/lib/foundry";
 import { CustomSelect } from "./CustomSelect";
 import { refundGate, type NavigationProgress } from "@/lib/decision-story";
-import { DecisionStoryView, type StoryCheckpoint } from "./DecisionStoryView";
+import { DecisionStoryView, type ShowcaseMode, type StoryCheckpoint } from "./DecisionStoryView";
 
 interface RuntimeViewProps {
   sendWs: (action: string, payload?: Record<string, any>) => boolean;
@@ -22,6 +22,9 @@ interface RuntimeViewProps {
   replayMode?: boolean;
   replayLoading?: boolean;
   comparisonModelName?: string;
+  showcaseMode?: ShowcaseMode;
+  animationPaused?: boolean;
+  onShowcaseModeChange?: (mode: ShowcaseMode) => void;
   onPlayRecorded?: (scenarioId: string) => void;
   onOpenWorkbench?: (sampleId?: string) => void;
   onOpenTriage?: () => void;
@@ -46,6 +49,9 @@ export default function RuntimeView({
   replayMode = false,
   replayLoading = false,
   comparisonModelName = "gpt-6.1-terra",
+  showcaseMode = "solution",
+  animationPaused = false,
+  onShowcaseModeChange,
   onPlayRecorded,
   onOpenWorkbench,
   onOpenTriage,
@@ -104,6 +110,8 @@ export default function RuntimeView({
   const [inferencePhase, setInferencePhase] = useState<"idle" | "receiving" | "evaluating" | "decided" | "stopped">("idle");
   const [modelInput, setModelInput] = useState("");
   const [checkpoints, setCheckpoints] = useState<StoryCheckpoint[]>([]);
+  const [baselineCheckpoints, setBaselineCheckpoints] = useState<StoryCheckpoint[]>([]);
+  const modelInputRef = useRef("");
   const [showBaseline, setShowBaseline] = useState(false);
   const [navigationProgress, setNavigationProgress] = useState<NavigationProgress | null>(null);
   const isStory = Boolean(scenario.stages || scenario.navigation);
@@ -143,7 +151,9 @@ export default function RuntimeView({
     setStoryStage(-1);
     setInferencePhase("idle");
     setModelInput("");
+    modelInputRef.current = "";
     setCheckpoints([]);
+    setBaselineCheckpoints([]);
     setNavigationProgress(null);
     setD1Calls(0);
     setD1MsTotal(0);
@@ -188,12 +198,19 @@ export default function RuntimeView({
         setD1LastMs(0);
         setTerraLastMs(0);
         setModelInput("");
+        modelInputRef.current = "";
       } else if (event === "runtime_evaluation_started") {
         setInferencePhase("evaluating");
         setModelInput(data.modelInput);
-        if (Array.isArray(data.questions)) setQuestions(data.questions);
+        modelInputRef.current = data.modelInput;
+        if (Array.isArray(data.questions)) {
+          questionsRef.current = data.questions;
+          setQuestions(data.questions);
+        }
       } else if (event === "runtime_navigation_state") {
         setNavigationProgress(data as NavigationProgress);
+        setCheckpoints(previous => previous.map(item => item.index === data.index ? { ...item, navigation: data as NavigationProgress } : item));
+        setBaselineCheckpoints(previous => previous.map(item => item.index === data.index ? { ...item, navigation: data as NavigationProgress } : item));
       } else if (event === "runtime_token") {
         const nextText =
           typeof data.transcript === "string"
@@ -218,7 +235,7 @@ export default function RuntimeView({
         setD1LastMs(lat);
         setD1Answers(answers);
         setInferencePhase("decided");
-        if (Number.isInteger(data.index)) setCheckpoints((previous) => [...previous.filter((item) => item.index !== data.index), { index: data.index, title: data.currentNode, latencyMs: lat, answers }]);
+        if (Number.isInteger(data.index)) setCheckpoints((previous) => [...previous.filter((item) => item.index !== data.index), { index: data.index, title: data.currentNode, latencyMs: lat, answers, modelInput: modelInputRef.current, questions: questionsRef.current }]);
 
         setD1History((prev) => {
           const next = { ...prev };
@@ -283,6 +300,7 @@ export default function RuntimeView({
         setTerraMsTotal((t) => t + lat);
         setTerraLastMs(lat);
         setTerraAnswers(answers);
+        if (Number.isInteger(data.index)) setBaselineCheckpoints(previous => [...previous.filter(item => item.index !== data.index), { index: data.index, title: data.currentNode, latencyMs: lat, answers, modelInput: modelInputRef.current, questions: questionsRef.current }]);
         setTerraHistory((prev) => {
           const next = { ...prev };
           for (const [k, ans] of Object.entries(answers)) {
@@ -504,12 +522,13 @@ export default function RuntimeView({
     return <DecisionStoryView
       scenario={scenario} questions={questions} transcript={transcript} stageIndex={storyStage}
       phase={inferencePhase} modelInput={modelInput} answers={d1Answers} baselineAnswers={terraAnswers}
-      latencyMs={d1LastMs} baselineLatencyMs={terraLastMs} calls={d1Calls} checkpoints={checkpoints}
+      latencyMs={d1LastMs} baselineLatencyMs={terraLastMs} calls={d1Calls} checkpoints={checkpoints} baselineCheckpoints={baselineCheckpoints}
       running={running} complete={streamDone} error={streamError} replayMode={replayMode}
       replayLoading={replayLoading} ready={wsConnected} comparisonModelName={comparisonModelName}
       onSelect={setScenarioId} onRun={startStream} onReplay={(id) => onPlayRecorded?.(id)}
       onVerify={(id) => onOpenWorkbench?.(id)} onTriage={() => onOpenTriage?.()}
       navigationProgress={navigationProgress}
+      mode={showcaseMode} animationPaused={animationPaused} onModeChange={(mode) => onShowcaseModeChange?.(mode)}
     />;
   }
 
