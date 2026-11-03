@@ -40,6 +40,8 @@ The in-app **Watch technical demo** opens a 1:55 English-narrated walkthrough of
 
 `public/replays/showcase.json` contains original Azure outputs and event offsets, reused from the project's recorded demonstration history. No responses are synthesized during playback. Infrastructure endpoints and common authentication/identity metadata are redacted recursively on import, recording/checkpoint writes and export, without changing answers or measurements. Imported files remain in the current tab; a reload restores the included bundle. Redaction cannot identify every kind of confidential prose: review custom inputs and outputs before sharing exported files.
 
+Redaction covers the current published assets and shared replay files. Existing Git history and previously downloaded copies are not rewritten.
+
 ```bash
 npm run replay:test
 # With the authenticated backend running:
