@@ -17,6 +17,8 @@ interface RuntimeViewProps {
   ) => () => void;
   wsConnected: boolean;
   externalScenarioId?: string | null;
+  replayMode?: boolean;
+  comparisonModelName?: string;
 }
 
 interface MomentItem {
@@ -35,6 +37,8 @@ export default function RuntimeView({
   subscribeWs,
   wsConnected,
   externalScenarioId,
+  replayMode = false,
+  comparisonModelName = "gpt-6.1-terra",
 }: RuntimeViewProps) {
   const [scenarioId, setScenarioId] = useState(RUNTIME_SCENARIOS[0].id);
 
@@ -52,6 +56,7 @@ export default function RuntimeView({
   const [questions, setQuestions] = useState<DecisionQuestion[]>(() => [
     ...RUNTIME_SCENARIOS[0].questions,
   ]);
+  useEffect(() => { setQuestions([...scenario.questions]); }, [scenario]);
   const [newQText, setNewQText] = useState("");
   const [showAddQ, setShowAddQ] = useState(false);
 
@@ -290,10 +295,10 @@ export default function RuntimeView({
     if (!transcript) {
       return (
         <div className="turn note">
-          Click <b>Stream Conversation</b> to generate a live customer
-          conversation via <code>gpt-6.1-terra</code> and watch{" "}
+          Click <b>{replayMode ? "Replay conversation" : "Stream Conversation"}</b> to {replayMode ? "replay a recorded" : "generate a live"} customer
+          conversation via <code>{comparisonModelName}</code> and watch{" "}
           <b>Microsoft-Decision-1</b> re-evaluate every decision on every word
-          over WebSocket.
+          {replayMode ? "from the original Azure event timeline." : "over WebSocket."}
         </div>
       );
     }
@@ -379,10 +384,13 @@ export default function RuntimeView({
       const nodes: React.ReactNode[] = [];
       let cursor = t.contentStart;
       segMarkers.forEach((m, mIdx) => {
-        if (m.start > cursor) {
-          nodes.push(transcript.slice(cursor, m.start));
+        // Entity and decision highlights can overlap; never repeat source text.
+        if (m.end <= cursor) return;
+        const start = Math.max(cursor, m.start);
+        if (start > cursor) {
+          nodes.push(transcript.slice(cursor, start));
         }
-        const sliceText = transcript.slice(m.start, m.end);
+        const sliceText = transcript.slice(start, m.end);
         if (m.kind === "flag") {
           nodes.push(
             <mark key={`f-${mIdx}`} className="flagword">
@@ -431,17 +439,17 @@ export default function RuntimeView({
       <section className="hero-banner">
         <div>
           <p className="eyebrow">
-            01 · REAL-TIME WEBSOCKET STREAMING + SYSTEMONE DECISIONS
+            01 · {replayMode ? "RECORDED EVENT TIMELINE" : "REAL-TIME WEBSOCKET STREAMING"} + SYSTEMONE DECISIONS
           </p>
           <h1>
             Every new word, <strong>re-decided live.</strong>
           </h1>
         </div>
         <p className="hero-copy">
-          As a customer or agent conversation streams in over WebSocket,{" "}
+          As a customer or agent conversation {replayMode ? "replays from its recorded timeline" : "streams in over WebSocket"},{" "}
           <b>Microsoft-Decision-1</b> (
           <code>/providers/microsoft/v1/systemone</code>) re-evaluates every
-          typed question on every new word while racing <b>gpt-6.1-terra</b> in
+          typed question on every new word while racing <b>{comparisonModelName}</b> in
           parallel.
         </p>
       </section>
@@ -450,16 +458,18 @@ export default function RuntimeView({
         {/* Left Column */}
         <section className="card">
           <div className="card-head">
-            <span className="eyebrow">01 · LIVE CONVERSATION STREAM</span>
+            <span className="eyebrow">01 · {replayMode ? "RECORDED" : "LIVE"} CONVERSATION STREAM</span>
             <div
               style={{
                 display: "flex",
                 gap: 8,
                 flexWrap: "wrap",
                 alignItems: "center",
+                maxWidth: "100%",
+                minWidth: 0,
               }}
             >
-              <div style={{ minWidth: 310 }}>
+              <div style={{ minWidth: 0, width: "min(310px, 100%)" }}>
                 <CustomSelect
                   value={scenarioId}
                   disabled={running}
@@ -486,7 +496,7 @@ export default function RuntimeView({
                 disabled={!wsConnected}
               >
                 <span>
-                  {running ? "■ Stop Stream" : "▶ Stream Conversation"}
+                  {running ? "■ Stop Stream" : replayMode ? "▶ Replay conversation" : "▶ Stream Conversation"}
                 </span>
               </button>
             </div>
@@ -503,7 +513,7 @@ export default function RuntimeView({
             </span>
             <span>·</span>
             <span className="terra-stat">
-              gpt-6.1-terra: <b>{terraCalls}</b> calls (
+              {comparisonModelName}: <b>{terraCalls}</b> calls (
               {terraAvg ? `${terraAvg}ms avg` : "—"})
             </span>
             <span>·</span>
@@ -546,7 +556,7 @@ export default function RuntimeView({
                   </h3>
                   <div className="items">
                     {entries.length === 0 ? (
-                      <span style={{ color: "var(--text-dim)", fontSize: 12 }}>
+                      <span style={{ color: "var(--text-dim)", fontSize: "var(--font-sm)" }}>
                         —
                       </span>
                     ) : (
@@ -574,7 +584,7 @@ export default function RuntimeView({
             <span className="eyebrow">
               02 · DECISIONS ·{" "}
               <span className="hint">
-                Microsoft-Decision-1 (solid) vs gpt-6.1-terra (dashed)
+                Microsoft-Decision-1 (solid) vs {comparisonModelName} (dashed)
               </span>
             </span>
             <button
@@ -670,7 +680,7 @@ export default function RuntimeView({
 
                   <div className="dq-terra-row">
                     <span>
-                      gpt-6.1-terra: <b>{terraAns ? terraAns.label : "…"}</b>
+                      {comparisonModelName}: <b>{terraAns ? terraAns.label : "…"}</b>
                     </span>
                     <span>{terraLastMs ? `${terraLastMs}ms` : "—"}</span>
                   </div>
@@ -703,7 +713,7 @@ export default function RuntimeView({
                 <div
                   style={{
                     color: "var(--text-muted)",
-                    fontSize: 13,
+                    fontSize: "var(--font-md)",
                     marginTop: 6,
                   }}
                 >
@@ -735,7 +745,7 @@ export default function RuntimeView({
             </span>
           </div>
           {moments.length === 0 ? (
-            <div style={{ color: "var(--text-dim)", fontSize: 12.5 }}>
+            <div style={{ color: "var(--text-dim)", fontSize: "var(--font-sm)" }}>
               Mind-change events will appear here as the conversation unfolds.
             </div>
           ) : (
@@ -758,13 +768,13 @@ export default function RuntimeView({
               <div className="verdict-big">
                 Stream Complete ·{" "}
                 {d1Avg && terraAvg
-                  ? `Decision-1 averaged ${d1Avg}ms vs ${terraAvg}ms on gpt-6.1-terra (${(
+                  ? `Decision-1 averaged ${d1Avg}ms vs ${terraAvg}ms on ${comparisonModelName} (${(
                       terraAvg / Math.max(1, d1Avg)
                     ).toFixed(1)}× faster)`
                   : `Decision-1 completed ${d1Calls} live evaluations`}
               </div>
               <span className="eyebrow">
-                THE SCRIPT · RANDOM TWIST & ENDING GIVEN TO GPT-6.1-TERRA
+                THE SCRIPT · RANDOM TWIST & ENDING GIVEN TO {comparisonModelName}
               </span>
               <p style={{ margin: "6px 0 4px" }}>
                 <b>Mid-call twist:</b> {pickInfo.pick?.twist}

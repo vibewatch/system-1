@@ -17,10 +17,14 @@ import {
 } from "@/lib/demo-data";
 import type { DecisionRunResult } from "@/lib/foundry";
 import { CustomSelect, type SelectOption } from "./CustomSelect";
+import { IconButton } from "./IconButton";
+import { Trash2, X } from "lucide-react";
 
 interface Props {
   allUseCases: StudioSample[];
   comparisonModelName?: string;
+  replayMode?: boolean;
+  readOnlyCaseIds?: string[];
   onLaunchInStudio: (useCase: StudioSample, autoRun?: boolean) => void;
   onLaunchRuntimeScenario: (scenarioId: string) => void;
   onSaveCustomUseCase: (useCase: StudioSample) => Promise<void>;
@@ -88,6 +92,8 @@ const QUESTION_TYPE_OPTIONS: SelectOption[] = [
 export function UseCaseFrameworkView({
   allUseCases,
   comparisonModelName = "gpt-6.1-terra",
+  replayMode = false,
+  readOnlyCaseIds = [],
   onLaunchInStudio,
   onSaveCustomUseCase,
   onDeleteCustomUseCase,
@@ -503,7 +509,7 @@ export function UseCaseFrameworkView({
       setShowBuilderModal(false);
       if (autoLaunch) {
         onLaunchInStudio(newSample, true);
-      } else {
+      } else if (!replayMode) {
         await runSolutionBenchmark(newSample);
       }
     } finally {
@@ -531,17 +537,17 @@ export function UseCaseFrameworkView({
             <h1
               style={{
                 margin: "3px 0 4px",
-                fontSize: "clamp(19px, 2vw, 25px)",
+                fontSize: "var(--font-2xl)",
                 fontWeight: 700,
                 letterSpacing: "-0.025em",
               }}
             >
-              16 Production Decision Gates Across 9 Industries
+              {allUseCases.length} Decision Gates Across {new Set(allUseCases.map((sample) => sample.industry).filter(Boolean)).size} Industries
             </h1>
             <p
               style={{
                 margin: 0,
-                fontSize: 13,
+                fontSize: "var(--font-md)",
                 color: "var(--text-muted)",
                 maxWidth: 740,
               }}
@@ -553,13 +559,13 @@ export function UseCaseFrameworkView({
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div className="catalog-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", maxWidth: "100%" }}>
             <input
               type="text"
               placeholder="Search industry or use case…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ width: 210, fontSize: 12.5 }}
+              style={{ width: 210, fontSize: "var(--font-sm)" }}
             />
             <button
               type="button"
@@ -583,6 +589,7 @@ export function UseCaseFrameworkView({
             </button>
           </div>
         </div>
+        {replayMode && <p className="detail-note">Recorded suite · original Azure answers, latency and usage. Custom solutions are saved locally; switch to live mode to evaluate new inputs.</p>}
 
         {/* Industry Filter Bar */}
         <div className="industry-pills">
@@ -621,7 +628,7 @@ export function UseCaseFrameworkView({
             <span className="wb-proof-hero accent">
               ${DECISION1_INPUT_PRICE_PER_1M_USD}/1M
             </span>
-            <div style={{ textAlign: "right", font: "500 11px var(--mono)" }}>
+            <div style={{ textAlign: "right", font: "500 var(--font-xs) var(--mono)" }}>
               <div style={{ color: "var(--primary)", fontWeight: 700 }}>
                 Decision-1 Output: $0.00 / 1M
               </div>
@@ -646,7 +653,7 @@ export function UseCaseFrameworkView({
             <span className="wb-proof-hero accent">
               ${fleetEconomics.avgD1Per1k.toFixed(4)}
             </span>
-            <div style={{ textAlign: "right", font: "500 11px var(--mono)" }}>
+            <div style={{ textAlign: "right", font: "500 var(--font-xs) var(--mono)" }}>
               <div style={{ color: "var(--primary)", fontWeight: 700 }}>
                 Saves {fleetEconomics.savingsPct}% vs LLM
               </div>
@@ -677,7 +684,7 @@ export function UseCaseFrameworkView({
             <span className="wb-proof-hero accent">
               {aggregateStats ? `${aggregateStats.d1AccuracyPct}%` : "Ready"}
             </span>
-            <div style={{ textAlign: "right", font: "500 11px var(--mono)" }}>
+            <div style={{ textAlign: "right", font: "500 var(--font-xs) var(--mono)" }}>
               <div style={{ color: "var(--primary)", fontWeight: 700 }}>
                 {aggregateStats
                   ? `${aggregateStats.solutionsTested} solutions (${aggregateStats.totalCases} cases)`
@@ -716,7 +723,7 @@ export function UseCaseFrameworkView({
                 <div className="uc-meta-row">
                   <span
                     style={{
-                      font: "600 10px var(--mono)",
+                      font: "600 var(--font-xs) var(--mono)",
                       textTransform: "uppercase",
                       letterSpacing: "0.08em",
                       color: "var(--primary)",
@@ -726,7 +733,7 @@ export function UseCaseFrameworkView({
                   </span>
                   <span
                     style={{
-                      font: "500 10.5px var(--mono)",
+                      font: "500 var(--font-xs) var(--mono)",
                       color: "var(--text-dim)",
                     }}
                   >
@@ -755,7 +762,7 @@ export function UseCaseFrameworkView({
                   >
                     <div
                       style={{
-                        font: "700 9.5px var(--mono)",
+                        font: "700 var(--font-xs) var(--mono)",
                         textTransform: "uppercase",
                         letterSpacing: "0.08em",
                         color: "var(--terra)",
@@ -766,7 +773,7 @@ export function UseCaseFrameworkView({
                     </div>
                     <div
                       style={{
-                        fontSize: 12,
+                        fontSize: "var(--font-sm)",
                         lineHeight: 1.45,
                         color: "var(--text)",
                       }}
@@ -778,7 +785,7 @@ export function UseCaseFrameworkView({
                   <div style={{ padding: "9px 12px" }}>
                     <div
                       style={{
-                        font: "700 9.5px var(--mono)",
+                        font: "700 var(--font-xs) var(--mono)",
                         textTransform: "uppercase",
                         letterSpacing: "0.08em",
                         color: "var(--primary)",
@@ -789,7 +796,7 @@ export function UseCaseFrameworkView({
                     </div>
                     <div
                       style={{
-                        fontSize: 12,
+                        fontSize: "var(--font-sm)",
                         lineHeight: 1.45,
                         color: "var(--text)",
                       }}
@@ -807,7 +814,7 @@ export function UseCaseFrameworkView({
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    font: "500 11px var(--mono)",
+                    font: "500 var(--font-xs) var(--mono)",
                     color: "var(--text-muted)",
                     paddingTop: 8,
                     borderTop: "1px solid var(--border-soft)",
@@ -828,7 +835,7 @@ export function UseCaseFrameworkView({
                     <button
                       type="button"
                       className="ghost"
-                      style={{ padding: "2px 7px", fontSize: 10.5 }}
+                      style={{ padding: "2px 7px", fontSize: "var(--font-xs)" }}
                       onClick={() =>
                         setExpandedReportId(isExpanded ? null : uc.id)
                       }
@@ -847,7 +854,7 @@ export function UseCaseFrameworkView({
                       borderRadius: "var(--radius-sm)",
                       background: "var(--bg-card-soft)",
                       border: "1px solid var(--border)",
-                      font: "500 11px var(--mono)",
+                      font: "500 var(--font-xs) var(--mono)",
                       display: "flex",
                       flexDirection: "column",
                       gap: 4,
@@ -902,19 +909,12 @@ export function UseCaseFrameworkView({
                       disabled={rep?.running}
                       onClick={() => runSolutionBenchmark(uc)}
                     >
-                      {rep?.running ? "Testing…" : "Verify 2 Cases"}
+                      {rep?.running ? "Testing…" : `${replayMode ? "Replay" : "Verify"} ${uc.testCases?.length || 1} Cases`}
                     </button>
                   </div>
 
-                  {uc.origin === "custom" && (
-                    <button
-                      type="button"
-                      className="ghost"
-                      style={{ color: "var(--danger)" }}
-                      onClick={() => onDeleteCustomUseCase(uc.id)}
-                    >
-                      Delete
-                    </button>
+                  {uc.origin === "custom" && !readOnlyCaseIds.includes(uc.id) && (
+                    <IconButton label={`Delete custom solution: ${uc.label}`} icon={<Trash2 size={16} />} style={{ color: "var(--danger)" }} onClick={() => onDeleteCustomUseCase(uc.id)} />
                   )}
                 </div>
               </div>
@@ -936,21 +936,15 @@ export function UseCaseFrameworkView({
           >
             <div className="modal-head">
               <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>
+                <div style={{ fontWeight: 700, fontSize: "var(--font-lg)" }}>
                   Create Custom Microsoft-Decision-1 Solution
                 </div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                <div style={{ fontSize: "var(--font-sm)", color: "var(--text-muted)" }}>
                   Define your business scenario, typed questions (Noul / Choice /
                   Score), and expected ground-truth answers
                 </div>
               </div>
-              <button
-                type="button"
-                className="ghost"
-                onClick={() => setShowBuilderModal(false)}
-              >
-                Close &times;
-              </button>
+              <IconButton label="Close custom solution builder" icon={<X size={18} />} onClick={() => setShowBuilderModal(false)} />
             </div>
 
             <div
@@ -968,7 +962,7 @@ export function UseCaseFrameworkView({
                   <label
                     style={{
                       display: "block",
-                      font: "600 10.5px var(--mono)",
+                      font: "600 var(--font-xs) var(--mono)",
                       color: "var(--text-muted)",
                       marginBottom: 4,
                     }}
@@ -1008,7 +1002,7 @@ export function UseCaseFrameworkView({
                   <label
                     style={{
                       display: "block",
-                      font: "600 10.5px var(--mono)",
+                      font: "600 var(--font-xs) var(--mono)",
                       color: "var(--text-muted)",
                       marginBottom: 4,
                     }}
@@ -1026,7 +1020,7 @@ export function UseCaseFrameworkView({
                   <label
                     style={{
                       display: "block",
-                      font: "600 10.5px var(--mono)",
+                      font: "600 var(--font-xs) var(--mono)",
                       color: "var(--text-muted)",
                       marginBottom: 4,
                     }}
@@ -1046,7 +1040,7 @@ export function UseCaseFrameworkView({
                 <label
                   style={{
                     display: "block",
-                    font: "600 10.5px var(--mono)",
+                    font: "600 var(--font-xs) var(--mono)",
                     color: "var(--text-muted)",
                     marginBottom: 4,
                   }}
@@ -1065,7 +1059,7 @@ export function UseCaseFrameworkView({
                 <label
                   style={{
                     display: "block",
-                    font: "600 10.5px var(--mono)",
+                    font: "600 var(--font-xs) var(--mono)",
                     color: "var(--text-muted)",
                     marginBottom: 4,
                   }}
@@ -1073,7 +1067,7 @@ export function UseCaseFrameworkView({
                   SAMPLE INPUT DOCUMENT (`state`)
                 </label>
                 <textarea
-                  style={{ minHeight: 110, fontFamily: "var(--mono)", fontSize: 12 }}
+                  style={{ minHeight: 110, fontFamily: "var(--mono)", fontSize: "var(--font-sm)" }}
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                 />
@@ -1091,7 +1085,7 @@ export function UseCaseFrameworkView({
                 >
                   <span
                     style={{
-                      font: "600 10.5px var(--mono)",
+                      font: "600 var(--font-xs) var(--mono)",
                       color: "var(--text-muted)",
                     }}
                   >
@@ -1137,7 +1131,7 @@ export function UseCaseFrameworkView({
                           handleUpdateQuestion(idx, { label: e.target.value })
                         }
                         placeholder="Label"
-                        style={{ fontSize: 12 }}
+                        style={{ fontSize: "var(--font-sm)" }}
                       />
                       <input
                         type="text"
@@ -1148,7 +1142,7 @@ export function UseCaseFrameworkView({
                           })
                         }
                         placeholder="Question prompt"
-                        style={{ fontSize: 12 }}
+                        style={{ fontSize: "var(--font-sm)" }}
                       />
                       <input
                         type="text"
@@ -1160,20 +1154,9 @@ export function UseCaseFrameworkView({
                           }))
                         }
                         placeholder="Expected (e.g. Yes)"
-                        style={{ fontSize: 12, fontFamily: "var(--mono)" }}
+                        style={{ fontSize: "var(--font-sm)", fontFamily: "var(--mono)" }}
                       />
-                      <button
-                        type="button"
-                        className="ghost"
-                        style={{ padding: "4px 8px", fontSize: 11 }}
-                        onClick={() =>
-                          setQuestions((prev) =>
-                            prev.filter((_, i) => i !== idx)
-                          )
-                        }
-                      >
-                        &times;
-                      </button>
+                      <IconButton label={`Remove question: ${q.label}`} icon={<Trash2 size={15} />} onClick={() => setQuestions((prev) => prev.filter((_, i) => i !== idx))} />
                     </div>
                   ))}
                 </div>

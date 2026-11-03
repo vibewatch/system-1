@@ -104,7 +104,7 @@ export function CustomSelect({
         <div
           style={{
             fontFamily: "var(--mono)",
-            fontSize: "0.66rem",
+            fontSize: "var(--font-xs)",
             color: "var(--text-muted)",
             textTransform: "uppercase",
             marginBottom: 4,

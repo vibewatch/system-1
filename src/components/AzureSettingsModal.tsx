@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   type AzureClientConfig,
   type BrowserAuthMethod,
@@ -9,6 +9,8 @@ import {
   signInWithEntraPopup,
 } from "@/lib/client-foundry";
 import { CustomSelect } from "./CustomSelect";
+import { IconButton } from "./IconButton";
+import { X } from "lucide-react";
 
 interface Props {
   open: boolean;
@@ -26,6 +28,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
     text: string;
   } | null>(null);
   const [copiedCmd, setCopiedCmd] = useState(false);
+  useEffect(() => { if (open) { setDraft(config); setStatusMsg(null); } }, [open, config]);
 
   if (!open) return null;
 
@@ -139,24 +142,22 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
       >
         <div className="modal-head">
           <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>
+            <div style={{ fontWeight: 700, fontSize: "var(--font-lg)" }}>
               Connection &amp; Execution Mode
             </div>
             <div
               style={{
-                fontSize: 12.5,
+                fontSize: "var(--font-sm)",
                 color: "var(--text-muted)",
                 marginTop: 2,
               }}
             >
-              Default is Frontend + Backend Server Mode. Switch to Client-Only
+              Live execution defaults to Frontend + Backend Server Mode. Switch to Client-Only
               Mode to connect your own Azure AI Foundry endpoint directly from
               the browser.
             </div>
           </div>
-          <button type="button" className="ghost" onClick={onClose}>
-            Close &times;
-          </button>
+          <IconButton label="Close connection settings" icon={<X size={18} />} onClick={onClose} />
         </div>
 
         <div
@@ -247,7 +248,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                   <div
                     style={{
                       fontFamily: "var(--mono)",
-                      fontSize: "0.66rem",
+                      fontSize: "var(--font-xs)",
                       color: "var(--text-muted)",
                       marginBottom: 4,
                     }}
@@ -256,7 +257,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                   </div>
                   <input
                     className="q-input"
-                    style={{ fontFamily: "var(--mono)", fontSize: "0.75rem" }}
+                    style={{ fontFamily: "var(--mono)", fontSize: "var(--font-xs)" }}
                     placeholder="https://<your-resource>.cognitiveservices.azure.com"
                     value={draft.endpoint}
                     onChange={(e) => update({ endpoint: e.target.value })}
@@ -266,7 +267,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                   <div
                     style={{
                       fontFamily: "var(--mono)",
-                      fontSize: "0.66rem",
+                      fontSize: "var(--font-xs)",
                       color: "var(--text-muted)",
                       marginBottom: 4,
                     }}
@@ -275,7 +276,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                   </div>
                   <input
                     className="q-input"
-                    style={{ fontFamily: "var(--mono)", fontSize: "0.75rem" }}
+                    style={{ fontFamily: "var(--mono)", fontSize: "var(--font-xs)" }}
                     placeholder="Leave blank if Decision-1 is on the same endpoint"
                     value={draft.decisionEndpoint}
                     onChange={(e) =>
@@ -296,7 +297,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                   <div
                     style={{
                       fontFamily: "var(--mono)",
-                      fontSize: "0.66rem",
+                      fontSize: "var(--font-xs)",
                       color: "var(--text-muted)",
                       marginBottom: 4,
                     }}
@@ -305,7 +306,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                   </div>
                   <input
                     className="q-input"
-                    style={{ fontFamily: "var(--mono)", fontSize: "0.75rem" }}
+                    style={{ fontFamily: "var(--mono)", fontSize: "var(--font-xs)" }}
                     placeholder="Decision-1"
                     value={draft.decisionDeployment}
                     onChange={(e) =>
@@ -317,7 +318,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                   <div
                     style={{
                       fontFamily: "var(--mono)",
-                      fontSize: "0.66rem",
+                      fontSize: "var(--font-xs)",
                       color: "var(--text-muted)",
                       marginBottom: 4,
                     }}
@@ -326,7 +327,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                   </div>
                   <input
                     className="q-input"
-                    style={{ fontFamily: "var(--mono)", fontSize: "0.75rem" }}
+                    style={{ fontFamily: "var(--mono)", fontSize: "var(--font-xs)" }}
                     placeholder="gpt-6.1-terra (or gpt-4o / gpt-4.1)"
                     value={draft.terraDeployment}
                     onChange={(e) =>
@@ -352,7 +353,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                     <div
                       style={{
                         fontFamily: "var(--mono)",
-                        fontSize: "0.72rem",
+                        fontSize: "var(--font-xs)",
                         color: "var(--accent-d1)",
                       }}
                     >
@@ -377,7 +378,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                       <div
                         style={{
                           fontFamily: "var(--mono)",
-                          fontSize: "0.64rem",
+                          fontSize: "var(--font-xs)",
                           color: "var(--text-muted)",
                           marginBottom: 3,
                         }}
@@ -388,7 +389,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                         className="q-input"
                         style={{
                           fontFamily: "var(--mono)",
-                          fontSize: "0.74rem",
+                          fontSize: "var(--font-xs)",
                         }}
                         placeholder="common or <tenant-guid>"
                         value={draft.tenantId}
@@ -399,7 +400,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                       <div
                         style={{
                           fontFamily: "var(--mono)",
-                          fontSize: "0.64rem",
+                          fontSize: "var(--font-xs)",
                           color: "var(--text-muted)",
                           marginBottom: 3,
                         }}
@@ -410,7 +411,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                         className="q-input"
                         style={{
                           fontFamily: "var(--mono)",
-                          fontSize: "0.74rem",
+                          fontSize: "var(--font-xs)",
                         }}
                         placeholder="Enter Azure App Registration Client ID"
                         value={draft.clientId}
@@ -444,7 +445,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                   <div
                     style={{
                       fontFamily: "var(--mono)",
-                      fontSize: "0.68rem",
+                      fontSize: "var(--font-xs)",
                       color: "var(--text-secondary)",
                     }}
                   >
@@ -456,7 +457,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                     <button
                       type="button"
                       className="btn"
-                      style={{ padding: "3px 8px", fontSize: "0.66rem" }}
+                      style={{ padding: "3px 8px", fontSize: "var(--font-xs)" }}
                       onClick={copyAzCliCommand}
                     >
                       {copiedCmd
@@ -468,7 +469,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                 <input
                   type="password"
                   className="q-input"
-                  style={{ fontFamily: "var(--mono)", fontSize: "0.74rem" }}
+                  style={{ fontFamily: "var(--mono)", fontSize: "var(--font-xs)" }}
                   placeholder={
                     draft.authMethod === "api_key"
                       ? "Paste Azure Foundry API key..."
@@ -491,7 +492,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
               <div
                 style={{
                   fontFamily: "var(--mono)",
-                  fontSize: "0.74rem",
+                  fontSize: "var(--font-xs)",
                   fontWeight: 700,
                   color: "var(--primary)",
                   marginBottom: 4,
@@ -501,7 +502,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
               </div>
               <div
                 style={{
-                  fontSize: "0.78rem",
+                  fontSize: "var(--font-xs)",
                   color: "var(--text-muted)",
                   lineHeight: 1.5,
                 }}
@@ -530,7 +531,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                   : "var(--danger-soft)",
                 color: statusMsg.ok ? "var(--primary)" : "var(--danger)",
                 fontFamily: "var(--mono)",
-                fontSize: "0.73rem",
+                fontSize: "var(--font-xs)",
               }}
             >
               {statusMsg.text}

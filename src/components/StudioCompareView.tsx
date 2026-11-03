@@ -12,6 +12,8 @@ import {
 } from "@/lib/demo-data";
 import type { DecisionRunResult } from "@/lib/foundry";
 import { CustomSelect } from "./CustomSelect";
+import { IconButton } from "./IconButton";
+import { Copy, Grid2X2, SlidersHorizontal, Trash2, X } from "lucide-react";
 
 function buildClientSystemOnePayload(
   state: unknown,
@@ -43,6 +45,8 @@ interface StudioCompareViewProps {
   ) => () => void;
   wsConnected: boolean;
   comparisonModelName?: string;
+  decisionModelName?: string;
+  replayMode?: boolean;
   endpointUrl?: string;
   allUseCases?: StudioSample[];
   externalSample?: StudioSample | null;
@@ -55,6 +59,8 @@ export default function StudioCompareView({
   subscribeWs,
   wsConnected,
   comparisonModelName = "gpt-6.1-terra",
+  decisionModelName = "Decision-1",
+  replayMode = false,
   endpointUrl = "https://icsuaaisea.cognitiveservices.azure.com",
   allUseCases,
   externalSample,
@@ -115,6 +121,10 @@ export default function StudioCompareView({
         }
       } else if (event === "compare_finished") {
         setRacing(false);
+      } else if (event === "error") {
+        setRacing(false);
+        setD1Result(null);
+        setTerraResult(null);
       }
     });
   }, [subscribeWs]);
@@ -124,14 +134,14 @@ export default function StudioCompareView({
     if (wsConnected && !didInitialRun) {
       setDidInitialRun(true);
       const firstContent =
-        STUDIO_SAMPLES[0].testCases?.[0]?.content || STUDIO_SAMPLES[0].content;
+        samples[0].testCases?.[0]?.content || samples[0].content;
       sendWs("run_compare", {
         state: firstContent,
-        questions: STUDIO_SAMPLES[0].questions,
+        questions: samples[0].questions,
         mode: "compare",
       });
     }
-  }, [wsConnected, didInitialRun, sendWs]);
+  }, [wsConnected, didInitialRun, sendWs, samples]);
 
   const selectSample = (id: string) => {
     setSampleId(id);
@@ -311,7 +321,7 @@ export default function StudioCompareView({
     ]
   );
 
-  const systemOnePayload = buildClientSystemOnePayload(stateText, questions);
+  const systemOnePayload = buildClientSystemOnePayload(stateText, questions, decisionModelName);
 
   const curlSnippet = `curl --request POST \\
   --url "${endpointUrl}/providers/microsoft/v1/systemone" \\
@@ -328,27 +338,19 @@ export default function StudioCompareView({
             <div>
               <div
                 style={{
-                  font: "700 11px var(--mono)",
+                  font: "700 var(--font-xs) var(--mono)",
                   letterSpacing: "0.08em",
                   textTransform: "uppercase",
                 }}
               >
                 Scenarios ({samples.length})
               </div>
-              <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
+              <div style={{ fontSize: "var(--font-sm)", color: "var(--text-muted)" }}>
                 Select an enterprise use case
               </div>
             </div>
             {onOpenFramework && (
-              <button
-                type="button"
-                className="ghost"
-                style={{ padding: "4px 8px", fontSize: 11 }}
-                onClick={onOpenFramework}
-                title="Open Industry Catalog & Custom Scenario Builder"
-              >
-                Catalog / +New
-              </button>
+              <IconButton label="Open Industry Catalog and custom scenario builder" icon={<Grid2X2 size={16} />} tag="Catalog" onClick={onOpenFramework} />
             )}
           </div>
 
@@ -366,7 +368,7 @@ export default function StudioCompareView({
               style={{
                 width: "100%",
                 padding: "6px 9px",
-                fontSize: 12,
+                fontSize: "var(--font-sm)",
               }}
             />
           </div>
@@ -417,7 +419,7 @@ export default function StudioCompareView({
                 >
                   <span
                     style={{
-                      font: "600 10.5px var(--mono)",
+                      font: "600 var(--font-xs) var(--mono)",
                       textTransform: "uppercase",
                       letterSpacing: "0.08em",
                       color: "var(--primary)",
@@ -429,7 +431,7 @@ export default function StudioCompareView({
                   {activeVerdict && (
                     <span
                       style={{
-                        font: "600 10px var(--mono)",
+                        font: "600 var(--font-xs) var(--mono)",
                         padding: "2px 8px",
                         borderRadius: 4,
                         background:
@@ -450,7 +452,7 @@ export default function StudioCompareView({
                 <h1
                   style={{
                     margin: 0,
-                    fontSize: "clamp(18px, 1.8vw, 23px)",
+                    fontSize: "var(--font-2xl)",
                     fontWeight: 700,
                     letterSpacing: "-0.02em",
                   }}
@@ -460,13 +462,7 @@ export default function StudioCompareView({
               </div>
 
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => setSchemaModalOpen(true)}
-                >
-                  Customize Input &amp; Questions ({questions.length})
-                </button>
+                <IconButton label="Customize input and questions" icon={<SlidersHorizontal size={17} />} tag={`${questions.length} questions`} onClick={() => setSchemaModalOpen(true)} />
                 <button
                   type="button"
                   className="primary"
@@ -474,8 +470,8 @@ export default function StudioCompareView({
                   disabled={racing || !wsConnected}
                 >
                   {racing
-                    ? "Evaluating Live…"
-                    : `Run Live Evaluation`}
+                    ? replayMode ? "Replaying…" : "Evaluating Live…"
+                    : replayMode ? "Replay comparison" : "Run Live Evaluation"}
                 </button>
               </div>
             </div>
@@ -519,7 +515,7 @@ export default function StudioCompareView({
                 <div className="wb-case-tabs">
                   <span
                     style={{
-                      font: "600 10.5px var(--mono)",
+                      font: "600 var(--font-xs) var(--mono)",
                       textTransform: "uppercase",
                       letterSpacing: "0.08em",
                       color: "var(--text-muted)",
@@ -555,7 +551,7 @@ export default function StudioCompareView({
                   ) : (
                     <span
                       style={{
-                        fontSize: 12,
+                        fontSize: "var(--font-sm)",
                         color: "var(--text-muted)",
                       }}
                     >
@@ -566,7 +562,7 @@ export default function StudioCompareView({
 
                 <span
                   style={{
-                    font: "500 11px var(--mono)",
+                    font: "500 var(--font-xs) var(--mono)",
                     color: "var(--text-dim)",
                   }}
                 >
@@ -582,7 +578,7 @@ export default function StudioCompareView({
                   border: "1px solid var(--border)",
                   borderRadius: "var(--radius-sm)",
                   padding: "12px 14px",
-                  font: "12.5px/1.6 var(--mono)",
+                  font: "var(--font-sm)/1.6 var(--mono)",
                   color: "var(--text)",
                   whiteSpace: "pre-wrap",
                   maxHeight: 155,
@@ -609,7 +605,7 @@ export default function StudioCompareView({
                 <span className="wb-proof-hero accent">
                   {speedup ? `${speedup}×` : racing ? "…" : "—"}
                 </span>
-                <div style={{ textAlign: "right", font: "500 11.5px var(--mono)" }}>
+                <div style={{ textAlign: "right", font: "500 var(--font-sm) var(--mono)" }}>
                   <div style={{ color: "var(--primary)", fontWeight: 700 }}>
                     Decision-1: {d1Ms ? `${d1Ms} ms` : racing ? "running…" : "—"}
                   </div>
@@ -643,7 +639,7 @@ export default function StudioCompareView({
                     ? "…"
                     : "—"}
                 </span>
-                <div style={{ textAlign: "right", font: "500 11.5px var(--mono)" }}>
+                <div style={{ textAlign: "right", font: "500 var(--font-sm) var(--mono)" }}>
                   <div style={{ color: "var(--primary)", fontWeight: 700 }}>
                     Decision-1:{" "}
                     {d1Result && correctnessSummary.totalQuestions > 0
@@ -682,9 +678,9 @@ export default function StudioCompareView({
               <div className="wb-proof-main">
                 <span className="wb-proof-hero accent">
                   {economicsSummary.savingsPct}%{" "}
-                  <small style={{ fontSize: 13, fontWeight: 600 }}>saved</small>
+                  <small style={{ fontSize: "var(--font-md)", fontWeight: 600 }}>saved</small>
                 </span>
-                <div style={{ textAlign: "right", font: "500 11.5px var(--mono)" }}>
+                <div style={{ textAlign: "right", font: "500 var(--font-sm) var(--mono)" }}>
                   <div style={{ color: "var(--primary)", fontWeight: 700 }}>
                     Decision-1: ${economicsSummary.d1CostPer1kUsd.toFixed(4)} /
                     1k
@@ -728,7 +724,7 @@ export default function StudioCompareView({
                 </span>
                 <div
                   style={{
-                    fontSize: 12.5,
+                    fontSize: "var(--font-sm)",
                     color: "var(--text-muted)",
                     marginTop: 2,
                   }}
@@ -801,7 +797,7 @@ export default function StudioCompareView({
                             </div>
                             <div
                               style={{
-                                fontSize: 11.5,
+                                fontSize: "var(--font-sm)",
                                 color: "var(--text-muted)",
                                 marginTop: 2,
                               }}
@@ -812,7 +808,7 @@ export default function StudioCompareView({
                           <td>
                             <span
                               style={{
-                                font: "600 10px var(--mono)",
+                                font: "600 var(--font-xs) var(--mono)",
                                 textTransform: "uppercase",
                                 padding: "2px 7px",
                                 borderRadius: 4,
@@ -825,7 +821,7 @@ export default function StudioCompareView({
                           </td>
                           <td
                             style={{
-                              font: "600 12px var(--mono)",
+                              font: "600 var(--font-sm) var(--mono)",
                               color: "var(--text)",
                             }}
                           >
@@ -845,14 +841,14 @@ export default function StudioCompareView({
                                   <b
                                     style={{
                                       color: "var(--primary)",
-                                      fontSize: 13.5,
+                                      fontSize: "var(--font-md)",
                                     }}
                                   >
                                     {d1Ans.label}
                                   </b>
                                   <span
                                     style={{
-                                      font: "500 10.5px var(--mono)",
+                                      font: "500 var(--font-xs) var(--mono)",
                                       color: "var(--text-muted)",
                                     }}
                                   >
@@ -889,14 +885,14 @@ export default function StudioCompareView({
                                 <b
                                   style={{
                                     color: "var(--terra)",
-                                    fontSize: 13,
+                                    fontSize: "var(--font-md)",
                                   }}
                                 >
                                   {terraAns.label}
                                 </b>
                                 <div
                                   style={{
-                                    font: "500 10.5px var(--mono)",
+                                    font: "500 var(--font-xs) var(--mono)",
                                     color: "var(--text-muted)",
                                     marginTop: 2,
                                   }}
@@ -910,7 +906,7 @@ export default function StudioCompareView({
                               </span>
                             )}
                           </td>
-                          <td style={{ font: "600 11px var(--mono)" }}>
+                          <td style={{ font: "600 var(--font-xs) var(--mono)" }}>
                             {rowCorr?.d1Match === true ? (
                               <span
                                 style={{
@@ -955,7 +951,7 @@ export default function StudioCompareView({
                       <span className="badge">MICROSOFT-DECISION-1</span>
                       <div
                         style={{
-                          font: "500 11px var(--mono)",
+                          font: "500 var(--font-xs) var(--mono)",
                           color: "var(--text-muted)",
                           marginTop: 3,
                         }}
@@ -965,7 +961,7 @@ export default function StudioCompareView({
                     </div>
                     <span
                       style={{
-                        font: "700 13px var(--mono)",
+                        font: "700 var(--font-md) var(--mono)",
                         color: "var(--primary)",
                       }}
                     >
@@ -1023,7 +1019,7 @@ export default function StudioCompareView({
                       </span>
                       <div
                         style={{
-                          font: "500 11px var(--mono)",
+                          font: "500 var(--font-xs) var(--mono)",
                           color: "var(--text-muted)",
                           marginTop: 3,
                         }}
@@ -1033,7 +1029,7 @@ export default function StudioCompareView({
                     </div>
                     <span
                       style={{
-                        font: "700 13px var(--mono)",
+                        font: "700 var(--font-md) var(--mono)",
                         color: "var(--terra)",
                       }}
                     >
@@ -1132,7 +1128,7 @@ export default function StudioCompareView({
                           {q.label} ({q.type})
                         </b>
                         <span
-                          style={{ color: "var(--text-muted)", fontSize: 12 }}
+                          style={{ color: "var(--text-muted)", fontSize: "var(--font-sm)" }}
                         >
                           {q.instructions}
                         </span>
@@ -1148,7 +1144,7 @@ export default function StudioCompareView({
                               gridTemplateColumns: "150px 1fr 56px 1fr 56px",
                               gap: 10,
                               alignItems: "center",
-                              font: "500 11.5px var(--mono)",
+                              font: "500 var(--font-sm) var(--mono)",
                               marginBottom: 6,
                             }}
                           >
@@ -1237,13 +1233,7 @@ export default function StudioCompareView({
                     <span className="badge">
                       MICROSOFT ENTRA ID CURL — /providers/microsoft/v1/systemone
                     </span>
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => navigator.clipboard?.writeText(curlSnippet)}
-                    >
-                      Copy cURL
-                    </button>
+                    <IconButton label="Copy cURL request" icon={<Copy size={16} />} onClick={() => navigator.clipboard?.writeText(curlSnippet)} />
                   </div>
                   <div className="panel-body">
                     <pre className="code">{curlSnippet}</pre>
@@ -1295,12 +1285,12 @@ export default function StudioCompareView({
           >
             <div className="modal-head">
               <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>
+                <div style={{ fontWeight: 700, fontSize: "var(--font-lg)" }}>
                   Customize Input Document &amp; Decision Questions
                 </div>
-                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                <div style={{ fontSize: "var(--font-sm)", color: "var(--text-muted)" }}>
                   Edit the input payload or add custom Noul / Choice / Score
-                  questions for live evaluation
+                  questions for live evaluation. {replayMode && "Replay requires an exact recorded input and question set; use live mode for edits."}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
@@ -1314,13 +1304,7 @@ export default function StudioCompareView({
                 >
                   Apply &amp; Run Evaluation
                 </button>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => setSchemaModalOpen(false)}
-                >
-                  Close &times;
-                </button>
+                <IconButton label="Close input editor" icon={<X size={18} />} onClick={() => setSchemaModalOpen(false)} />
               </div>
             </div>
 
@@ -1332,7 +1316,7 @@ export default function StudioCompareView({
                 <label
                   style={{
                     display: "block",
-                    font: "600 11px var(--mono)",
+                    font: "600 var(--font-xs) var(--mono)",
                     textTransform: "uppercase",
                     color: "var(--text-muted)",
                     marginBottom: 6,
@@ -1343,14 +1327,14 @@ export default function StudioCompareView({
                 <textarea
                   value={stateText}
                   onChange={(e) => setStateText(e.target.value)}
-                  style={{ minHeight: 150, fontFamily: "var(--mono)", fontSize: 12.5 }}
+                  style={{ minHeight: 150, fontFamily: "var(--mono)", fontSize: "var(--font-sm)" }}
                 />
               </div>
 
               <div>
                 <div
                   style={{
-                    font: "600 11px var(--mono)",
+                    font: "600 var(--font-xs) var(--mono)",
                     textTransform: "uppercase",
                     color: "var(--text-muted)",
                     marginBottom: 8,
@@ -1379,12 +1363,12 @@ export default function StudioCompareView({
                         borderRadius: "var(--radius-sm)",
                         background: "var(--bg-input)",
                         border: "1px solid var(--border-soft)",
-                        fontSize: 12.5,
+                        fontSize: "var(--font-sm)",
                       }}
                     >
                       <span
                         style={{
-                          font: "600 10.5px var(--mono)",
+                          font: "600 var(--font-xs) var(--mono)",
                           textTransform: "uppercase",
                           color: "var(--primary)",
                         }}
@@ -1397,14 +1381,7 @@ export default function StudioCompareView({
                           {q.instructions}
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        className="ghost"
-                        style={{ padding: "2px 8px", fontSize: 11 }}
-                        onClick={() => removeQuestion(q.id)}
-                      >
-                        Remove
-                      </button>
+                      <IconButton label={`Remove question: ${q.label}`} icon={<Trash2 size={15} />} onClick={() => removeQuestion(q.id)} />
                     </div>
                   ))}
                 </div>
@@ -1423,7 +1400,7 @@ export default function StudioCompareView({
               >
                 <div
                   style={{
-                    font: "600 11px var(--mono)",
+                    font: "600 var(--font-xs) var(--mono)",
                     textTransform: "uppercase",
                     color: "var(--text-muted)",
                   }}

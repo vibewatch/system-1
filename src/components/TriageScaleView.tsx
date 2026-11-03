@@ -11,6 +11,8 @@ interface TriageScaleViewProps {
     handler: (msg: { event: string; data: any; ts: number }) => void
   ) => () => void;
   wsConnected: boolean;
+  replayMode?: boolean;
+  comparisonModelName?: string;
 }
 
 interface FeedItemState {
@@ -34,6 +36,8 @@ export default function TriageScaleView({
   sendWs,
   subscribeWs,
   wsConnected,
+  replayMode = false,
+  comparisonModelName = "gpt-6.1-terra",
 }: TriageScaleViewProps) {
   const [rate, setRate] = useState(10);
   const [running, setRunning] = useState(false);
@@ -46,6 +50,7 @@ export default function TriageScaleView({
   const [terraDoneCount, setTerraDoneCount] = useState(0);
   const [terraWaitTotal, setTerraWaitTotal] = useState(0);
   const [startTime, setStartTime] = useState<number>(0);
+  const [eventTime, setEventTime] = useState(0);
 
   const [d1FinishInfo, setD1FinishInfo] = useState<{
     terraRemaining: number;
@@ -56,7 +61,8 @@ export default function TriageScaleView({
   const d1WaitSumRef = useRef(0);
 
   useEffect(() => {
-    return subscribeWs(({ event, data }) => {
+    return subscribeWs(({ event, data, ts }) => {
+      if (event.startsWith("triage_")) setEventTime(replayMode ? ts : Date.now());
       if (event === "triage_started") {
         setRunning(true);
         setItems({});
@@ -66,7 +72,7 @@ export default function TriageScaleView({
         setD1WaitTotal(0);
         setTerraDoneCount(0);
         setTerraWaitTotal(0);
-        setStartTime(Date.now());
+        setStartTime(replayMode ? ts : Date.now());
         setD1FinishInfo(null);
         terraDoneRef.current = 0;
         d1WaitSumRef.current = 0;
@@ -143,7 +149,7 @@ export default function TriageScaleView({
         setRunning(false);
       }
     });
-  }, [subscribeWs]);
+  }, [subscribeWs, replayMode]);
 
   const toggleRun = () => {
     if (running) {
@@ -156,7 +162,7 @@ export default function TriageScaleView({
 
   const N = TRIAGE_FEED.messages.length;
   const elapsedSec = startTime
-    ? Math.max(0.5, (Date.now() - startTime) / 1000)
+    ? Math.max(0.5, ((replayMode ? eventTime : Date.now()) - startTime) / 1000)
     : 1;
   const d1InQueue = Math.max(0, arrivedCount - d1DoneCount);
   const terraInQueue = Math.max(0, arrivedCount - terraDoneCount);
@@ -209,14 +215,14 @@ export default function TriageScaleView({
       <section className="hero-banner">
         <div>
           <p className="eyebrow">
-            03 · HIGH-THROUGHPUT TRIAGE AT SCALE · QUEUE PHYSICS OVER WEBSOCKET
+            03 · HIGH-THROUGHPUT TRIAGE AT SCALE · {replayMode ? "ORIGINAL QUEUE EVENT TIMELINE" : "QUEUE PHYSICS OVER WEBSOCKET"}
           </p>
           <h1>
             {N} messages at {rate}/sec.{" "}
             <strong>Watch one queue drain and the other back up.</strong>
           </h1>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", maxWidth: "100%" }}>
           <div style={{ minWidth: 185 }}>
             <CustomSelect
               value={String(rate)}
@@ -249,7 +255,7 @@ export default function TriageScaleView({
             onClick={toggleRun}
             disabled={!wsConnected}
           >
-            {running ? "■ Stop Triage" : `▶ Run ${N} Messages`}
+            {running ? "■ Stop Triage" : `▶ ${replayMode ? "Replay" : "Run"} ${N} Messages`}
           </button>
         </div>
       </section>
@@ -263,13 +269,15 @@ export default function TriageScaleView({
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
+                flexWrap: "wrap",
+                gap: 8,
               }}
             >
               <div>
                 <span className="badge">MICROSOFT-DECISION-1</span>
                 <span
                   style={{
-                    font: "500 11px var(--mono)",
+                    font: "500 var(--font-xs) var(--mono)",
                     color: "var(--text-muted)",
                     marginLeft: 10,
                   }}
@@ -299,7 +307,7 @@ export default function TriageScaleView({
               <div className="fh-num">
                 <span className="v" style={{ color: "var(--primary-bright)" }}>
                   {d1DoneCount}
-                  <small style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                  <small style={{ fontSize: "var(--font-md)", color: "var(--text-muted)" }}>
                     /{N}
                   </small>
                 </span>
@@ -328,13 +336,15 @@ export default function TriageScaleView({
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
+                flexWrap: "wrap",
+                gap: 8,
               }}
             >
               <div>
-                <span className="badge terra">GPT-6.1-TERRA</span>
+                <span className="badge terra">{comparisonModelName}</span>
                 <span
                   style={{
-                    font: "500 11px var(--mono)",
+                    font: "500 var(--font-xs) var(--mono)",
                     color: "var(--text-muted)",
                     marginLeft: 10,
                   }}
@@ -367,7 +377,7 @@ export default function TriageScaleView({
               <div className="fh-num">
                 <span className="v" style={{ color: "var(--terra-bright)" }}>
                   {terraDoneCount}
-                  <small style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                  <small style={{ fontSize: "var(--font-md)", color: "var(--text-muted)" }}>
                     /{N}
                   </small>
                 </span>
@@ -396,11 +406,11 @@ export default function TriageScaleView({
             <div className="verdict-big">
               Microsoft-Decision-1 finished all {N} messages ·{" "}
               <span style={{ color: "var(--terra-bright)" }}>
-                gpt-6.1-terra still has {d1FinishInfo.terraRemaining} waiting in
+                {comparisonModelName} still has {d1FinishInfo.terraRemaining} waiting in
                 queue
               </span>
             </div>
-            <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
+            <div style={{ color: "var(--text-muted)", fontSize: "var(--font-md)" }}>
               Decision-1 average end-to-end queue + inference wait:{" "}
               <b>{(d1FinishInfo.d1AvgWait / 1000).toFixed(1)}s</b>. Because
               Decision-1 evaluates all criteria in a single forward pass with
@@ -442,10 +452,10 @@ export default function TriageScaleView({
 
                   return (
                     <div key={idx} className="fcard">
-                      <div style={{ fontSize: 13.5, lineHeight: 1.55 }}>
+                      <div style={{ fontSize: "var(--font-md)", lineHeight: 1.55 }}>
                         <span
                           style={{
-                            font: "600 10px var(--mono)",
+                            font: "600 var(--font-xs) var(--mono)",
                             color: "var(--text-dim)",
                             marginRight: 8,
                           }}
@@ -509,7 +519,7 @@ export default function TriageScaleView({
                         gap: 10,
                         alignItems: "center",
                         marginBottom: 6,
-                        fontSize: 12.5,
+                        fontSize: "var(--font-sm)",
                       }}
                     >
                       <span style={{ fontFamily: "var(--mono)" }}>{k}</span>
@@ -559,7 +569,7 @@ export default function TriageScaleView({
                       style={{
                         display: "flex",
                         justifyContent: "space-between",
-                        font: "500 12px var(--mono)",
+                        font: "500 var(--font-sm) var(--mono)",
                         padding: "3px 0",
                       }}
                     >
@@ -577,7 +587,7 @@ export default function TriageScaleView({
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
-                      font: "600 13px var(--mono)",
+                      font: "600 var(--font-md) var(--mono)",
                       padding: "6px 0",
                       color: "var(--danger)",
                     }}
@@ -587,7 +597,7 @@ export default function TriageScaleView({
                   </div>
                   <div
                     style={{
-                      font: "500 11.5px var(--mono)",
+                      font: "500 var(--font-sm) var(--mono)",
                       color: "var(--text-muted)",
                       marginTop: 4,
                     }}
@@ -604,7 +614,7 @@ export default function TriageScaleView({
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {topEntities.length === 0 ? (
-                    <span style={{ color: "var(--text-dim)", fontSize: 12 }}>
+                    <span style={{ color: "var(--text-dim)", fontSize: "var(--font-sm)" }}>
                       Entities will populate as messages arrive…
                     </span>
                   ) : (

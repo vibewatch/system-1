@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { CLAIM_DEMO } from "@/lib/demo-data";
 import type { DecisionRunResult } from "@/lib/foundry";
+import { IconButton } from "./IconButton";
+import { Pencil } from "lucide-react";
 
 interface AgentFormViewProps {
   sendWs: (action: string, payload?: Record<string, any>) => boolean;
@@ -10,6 +12,8 @@ interface AgentFormViewProps {
     handler: (msg: { event: string; data: any; ts: number }) => void
   ) => () => void;
   wsConnected: boolean;
+  replayMode?: boolean;
+  comparisonModelName?: string;
 }
 
 interface FilledField {
@@ -33,6 +37,8 @@ export default function AgentFormView({
   sendWs,
   subscribeWs,
   wsConnected,
+  replayMode = false,
+  comparisonModelName = "gpt-6.1-terra",
 }: AgentFormViewProps) {
   const [emailText, setEmailText] = useState(CLAIM_DEMO.text);
   const [running, setRunning] = useState(false);
@@ -67,7 +73,7 @@ export default function AgentFormView({
         }));
       } else if (event === "agent_done") {
         setRunning(false);
-        setDone(true);
+        setDone(!data.cancelled);
       }
     });
   }, [subscribeWs]);
@@ -80,7 +86,7 @@ export default function AgentFormView({
     setFilledFields({});
     setSteps([]);
     setDone(false);
-    sendWs("run_agent_form", { content: emailText });
+    if (!sendWs("run_agent_form", { content: emailText })) setRunning(false);
   };
 
   const renderHighlightedEmail = () => {
@@ -165,13 +171,7 @@ export default function AgentFormView({
         >
           {nodes}
         </div>
-        <button
-          className="ghost"
-          onClick={() => setFilledFields({})}
-          style={{ marginTop: 8 }}
-        >
-          Edit Raw Email Text
-        </button>
+        <IconButton label="Edit raw email text" icon={<Pencil size={16} />} tag="Edit" onClick={() => setFilledFields({})} style={{ marginTop: 8 }} />
       </div>
     );
   };
@@ -199,8 +199,8 @@ export default function AgentFormView({
           disabled={running || !wsConnected}
         >
           {running
-            ? "Agent Running over WebSocket…"
-            : "▶ Run Claim Agent (Decision-1 + gpt-6.1-terra)"}
+            ? replayMode ? "Replaying claim workflow…" : "Agent Running over WebSocket…"
+            : replayMode ? "▶ Replay claim workflow" : `▶ Run Claim Agent · ${comparisonModelName}`}
         </button>
       </section>
 
@@ -225,7 +225,7 @@ export default function AgentFormView({
               display: "flex",
               flexDirection: "column",
               gap: 6,
-              fontSize: 12.5,
+              fontSize: "var(--font-sm)",
             }}
           >
             {steps.length === 0 ? (
@@ -253,7 +253,7 @@ export default function AgentFormView({
                   />
                   <span
                     style={{
-                      font: "500 10.5px var(--mono)",
+                      font: "500 var(--font-xs) var(--mono)",
                       color: "var(--text-muted)",
                       whiteSpace: "nowrap",
                     }}
@@ -272,7 +272,7 @@ export default function AgentFormView({
             <span className="eyebrow">
               02 · STEP 1: POLICY GATES (MICROSOFT-DECISION-1 VS GPT-6.1-TERRA)
             </span>
-            <div style={{ font: "600 11px var(--mono)" }}>
+            <div style={{ font: "600 var(--font-xs) var(--mono)" }}>
               {d1Gate && (
                 <span
                   style={{ color: "var(--primary-bright)", marginRight: 12 }}
@@ -282,7 +282,7 @@ export default function AgentFormView({
               )}
               {terraGate && (
                 <span style={{ color: "var(--terra-bright)" }}>
-                  gpt-6.1-terra: {terraGate.latency_ms}ms
+                  {comparisonModelName}: {terraGate.latency_ms}ms
                 </span>
               )}
             </div>
@@ -331,7 +331,7 @@ export default function AgentFormView({
             {filledList.length > 0 && (
               <span
                 style={{
-                  font: "600 11px var(--mono)",
+                  font: "600 var(--font-xs) var(--mono)",
                   color: "var(--text-muted)",
                 }}
               >
@@ -395,7 +395,7 @@ export default function AgentFormView({
               <span className="eyebrow">
                 04 · STEP 3: AUTOMATED REPLY DRAFT TO POLICYHOLDER
               </span>
-              <p style={{ margin: "8px 0 0", fontSize: 13 }}>
+              <p style={{ margin: "8px 0 0", fontSize: "var(--font-md)" }}>
                 Dear{" "}
                 <b>
                   {filledFields["policyholder name"]?.value || "Daniel Okoro"}
