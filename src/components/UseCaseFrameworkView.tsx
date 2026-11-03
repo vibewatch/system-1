@@ -4,7 +4,11 @@ import React, { useMemo, useState } from "react";
 import {
   INDUSTRY_VERTICALS,
   RUNTIME_SCENARIOS,
+  DECISION1_INPUT_PRICE_PER_1M_USD,
+  TERRA_INPUT_PRICE_PER_1M_USD,
+  TERRA_OUTPUT_PRICE_PER_1M_USD,
   computeCorrectnessSummary,
+  computeUseCaseEconomics,
   type CorrectnessSummary,
   type StudioSample,
   type SolutionTestCase,
@@ -53,6 +57,8 @@ interface SolutionBenchmarkReport {
   agreementPct: number;
   d1AvgMs: number;
   terraAvgMs: number;
+  d1Usage?: { input_tokens: number; output_tokens: number };
+  terraUsage?: { input_tokens: number; output_tokens: number };
   error?: string;
 }
 
@@ -287,6 +293,10 @@ Payment Method: 4th distinct Visa BIN attempted in 3 minutes (3 prior declines f
       let agreeTotal = 0;
       let d1MsSum = 0;
       let trMsSum = 0;
+      let d1InTok = 0;
+      let d1OutTok = 0;
+      let trInTok = 0;
+      let trOutTok = 0;
 
       for (const tc of cases) {
         const { decision1, terra } = await onRunComparePair(
@@ -303,6 +313,10 @@ Payment Method: 4th distinct Visa BIN attempted in 3 minutes (3 prior declines f
         const trMs = terra?.latency_ms || 0;
         d1MsSum += d1Ms;
         trMsSum += trMs;
+        d1InTok += decision1?.usage?.input_tokens || 0;
+        d1OutTok += decision1?.usage?.output_tokens || 0;
+        trInTok += terra?.usage?.input_tokens || 0;
+        trOutTok += terra?.usage?.output_tokens || 0;
         totalQ += summary.totalQuestions;
         d1Corr += summary.d1Correct;
         trCorr += summary.terraCorrect;
@@ -320,6 +334,7 @@ Payment Method: 4th distinct Visa BIN attempted in 3 minutes (3 prior declines f
         });
       }
 
+      const nCases = Math.max(1, caseResults.length);
       setBenchmarks((prev) => ({
         ...prev,
         [uc.id]: {
@@ -334,8 +349,16 @@ Payment Method: 4th distinct Visa BIN attempted in 3 minutes (3 prior declines f
             totalQ > 0 ? Math.round((trCorr / totalQ) * 100) : 0,
           agreementPct:
             agreeTotal > 0 ? Math.round((agreeCount / agreeTotal) * 100) : 0,
-          d1AvgMs: Math.round(d1MsSum / Math.max(1, caseResults.length)),
-          terraAvgMs: Math.round(trMsSum / Math.max(1, caseResults.length)),
+          d1AvgMs: Math.round(d1MsSum / nCases),
+          terraAvgMs: Math.round(trMsSum / nCases),
+          d1Usage: {
+            input_tokens: Math.round(d1InTok / nCases),
+            output_tokens: Math.round(d1OutTok / nCases),
+          },
+          terraUsage: {
+            input_tokens: Math.round(trInTok / nCases),
+            output_tokens: Math.round(trOutTok / nCases),
+          },
         },
       }));
     } catch (err: any) {
@@ -580,6 +603,43 @@ Payment Method: 4th distinct Visa BIN attempted in 3 minutes (3 prior declines f
                 {ind} ({countsByIndustry[ind] || 0})
               </button>
             ))}
+          </div>
+
+          {/* Microsoft Foundry Pricing & Cost Economics Banner */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 10,
+              padding: "10px 14px",
+              borderRadius: 8,
+              background: "var(--bg-input)",
+              border: "1px solid var(--border-soft)",
+              fontFamily: "var(--mono)",
+              fontSize: "0.71rem",
+            }}
+          >
+            <span>
+              <b style={{ color: "var(--primary-bright)" }}>
+                Microsoft-Decision-1 Foundry Pricing:
+              </b>{" "}
+              <b>${DECISION1_INPUT_PRICE_PER_1M_USD.toFixed(3)} / 1M input tokens</b>{" "}
+              &middot;{" "}
+              <b style={{ color: "var(--accent-d1)" }}>
+                $0.00 / 1M output tokens (FREE)
+              </b>
+            </span>
+            <span style={{ color: "var(--text-muted)" }}>
+              vs{" "}
+              <b style={{ color: "var(--terra-bright)" }}>
+                {comparisonModelName}:
+              </b>{" "}
+              ${TERRA_INPUT_PRICE_PER_1M_USD.toFixed(2)} / 1M input &middot; $
+              {TERRA_OUTPUT_PRICE_PER_1M_USD.toFixed(2)} / 1M output (~130–200&times;
+              higher cost per gate)
+            </span>
           </div>
         </div>
       </div>
@@ -1079,6 +1139,108 @@ Payment Method: 4th distinct Visa BIN attempted in 3 minutes (3 prior declines f
                   {uc.codeRule}
                 </div>
               )}
+
+              {/* Use Case Cost & Token Economics Card */}
+              {(() => {
+                const econ = computeUseCaseEconomics(
+                  uc,
+                  bench?.d1Usage,
+                  bench?.terraUsage
+                );
+                return (
+                  <div
+                    style={{
+                      padding: "9px 11px",
+                      borderRadius: 8,
+                      background: "rgba(16, 185, 129, 0.05)",
+                      border: "1px solid rgba(16, 185, 129, 0.22)",
+                      fontFamily: "var(--mono)",
+                      fontSize: "0.68rem",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        gap: 6,
+                      }}
+                    >
+                      <span style={{ color: "var(--text-muted)" }}>
+                        USE CASE COST (PER 1,000 GATES{" "}
+                        {econ.isLiveMeasured ? "· LIVE TOKENS" : "· EST."})
+                      </span>
+                      <span
+                        style={{
+                          color: "var(--accent-d1)",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {econ.costMultiplier}&times; Cheaper ({econ.savingsPct}%
+                        Saved)
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: 8,
+                      }}
+                    >
+                      <span>
+                        Decision-1:{" "}
+                        <b style={{ color: "var(--primary-bright)" }}>
+                          ${econ.d1CostPer1kUsd.toFixed(4)} / 1k
+                        </b>{" "}
+                        <span style={{ color: "var(--text-muted)" }}>
+                          ({econ.d1InputTokens} in, $0 out)
+                        </span>
+                      </span>
+                      <span>
+                        {comparisonModelName}:{" "}
+                        <b style={{ color: "var(--terra-bright)" }}>
+                          ${econ.terraCostPer1kUsd.toFixed(3)} / 1k
+                        </b>{" "}
+                        <span style={{ color: "var(--text-muted)" }}>
+                          ({econ.terraInputTokens} in + {econ.terraOutputTokens}{" "}
+                          out)
+                        </span>
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        paddingTop: 3,
+                        borderTop: "1px dashed rgba(16, 185, 129, 0.2)",
+                        color: "var(--text-secondary)",
+                        fontSize: "0.65rem",
+                      }}
+                    >
+                      <span>
+                        At {(econ.dailyVolume / 1000).toFixed(0)}k calls/day: D1{" "}
+                        <b>${econ.d1MonthlyUsd.toFixed(2)}/mo</b> vs LLM{" "}
+                        <b>${econ.terraMonthlyUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}/mo</b>
+                      </span>
+                      <span style={{ color: "var(--accent-d1)" }}>
+                        Save{" "}
+                        <b>
+                          $
+                          {econ.monthlySavingsUsd.toLocaleString("en-US", {
+                            maximumFractionDigits: 0,
+                          })}
+                          /mo
+                        </b>
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Live Multi-Case Correctness Scorecard */}
               {bench && (

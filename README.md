@@ -1,6 +1,9 @@
 # Foundry // System-One (`Microsoft-Decision-1` Showcase & Benchmark Suite)
 
-Interactive Next.js 15 enterprise showcase and head-to-head correctness benchmark comparing **`Microsoft-Decision-1`** (`/providers/microsoft/v1/systemone`) against generative LLMs (such as **`gpt-6.1-terra`** via `/openai/v1/responses`) on **Azure AI Foundry** with **Microsoft Entra ID** authentication.
+- **Live GitHub Pages (Frontend-Only Mode)**: **`https://huangyingting.github.io/system-1/`**
+- **Repository**: **`https://github.com/huangyingting/system-1`**
+
+Interactive Next.js 15 enterprise showcase and head-to-head correctness & cost benchmark comparing **`Microsoft-Decision-1`** (`/providers/microsoft/v1/systemone`) against generative LLMs (such as **`gpt-6.1-terra`** via `/openai/v1/responses`) on **Azure AI Foundry** with **Microsoft Entra ID** authentication.
 
 ## Key Capabilities
 

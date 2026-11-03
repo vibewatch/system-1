@@ -48,6 +48,138 @@ export interface StudioSample {
   expected?: Record<string, string>;
   expectedGateVerdict?: string;
   testCases?: SolutionTestCase[];
+  estimatedDailyVolume?: number;
+}
+
+/**
+ * Official Microsoft Foundry Pay-As-You-Go Pricing:
+ * - Microsoft-Decision-1: $0.042 / 1M input tokens, $0.00 / 1M output tokens (Output is Free)
+ * - Frontier Generative LLM (gpt-6.1-terra): $2.50 / 1M input tokens, $10.00 / 1M output tokens
+ */
+export const DECISION1_INPUT_PRICE_PER_1M_USD = 0.042;
+export const DECISION1_OUTPUT_PRICE_PER_1M_USD = 0.0;
+export const TERRA_INPUT_PRICE_PER_1M_USD = 2.5;
+export const TERRA_OUTPUT_PRICE_PER_1M_USD = 10.0;
+
+export const DEFAULT_DAILY_VOLUME_BY_ID: Record<string, number> = {
+  ticket: 25_000,
+  lease: 5_000,
+  "sales-email": 15_000,
+  "refund-gate": 80_000,
+  "agent-tool-firewall": 150_000,
+  "rag-faithfulness-gate": 200_000,
+  "pii-egress-guard": 250_000,
+  "pr-security-gate": 20_000,
+  "soc-phishing-triage": 300_000,
+  "ind-aml-wire": 60_000,
+  "ind-clinical-prior-auth": 30_000,
+  "ind-cloud-sre-change": 40_000,
+  "ind-soc-edr-containment": 500_000,
+  "ind-semiconductor-wafer": 120_000,
+  "ind-ecommerce-return-fraud": 90_000,
+  "ind-telecom-bgp-hijack": 400_000,
+};
+
+export interface UseCaseEconomics {
+  d1InputTokens: number;
+  d1OutputTokens: number;
+  terraInputTokens: number;
+  terraOutputTokens: number;
+  d1CostPerCallUsd: number;
+  terraCostPerCallUsd: number;
+  d1CostPer1kUsd: number;
+  terraCostPer1kUsd: number;
+  d1CostPer1MUsd: number;
+  terraCostPer1MUsd: number;
+  dailyVolume: number;
+  d1MonthlyUsd: number;
+  terraMonthlyUsd: number;
+  monthlySavingsUsd: number;
+  costMultiplier: number;
+  savingsPct: number;
+  isLiveMeasured: boolean;
+}
+
+export function computeUseCaseEconomics(
+  sample: Pick<StudioSample, "id" | "content" | "questions" | "estimatedDailyVolume">,
+  liveD1Usage?: { input_tokens?: number; output_tokens?: number },
+  liveTerraUsage?: { input_tokens?: number; output_tokens?: number },
+  overrideDailyVolume?: number
+): UseCaseEconomics {
+  const questionSchemaChars = JSON.stringify(sample.questions || []).length;
+  const estBaseTokens = Math.max(
+    120,
+    Math.round(((sample.content?.length || 400) + questionSchemaChars) / 3.8)
+  );
+  const numQuestions = Math.max(1, sample.questions?.length || 4);
+
+  const d1InputTokens =
+    liveD1Usage?.input_tokens && liveD1Usage.input_tokens > 0
+      ? liveD1Usage.input_tokens
+      : estBaseTokens;
+  const d1OutputTokens =
+    liveD1Usage?.output_tokens && liveD1Usage.output_tokens > 0
+      ? liveD1Usage.output_tokens
+      : numQuestions * 2;
+
+  const terraInputTokens =
+    liveTerraUsage?.input_tokens && liveTerraUsage.input_tokens > 0
+      ? liveTerraUsage.input_tokens
+      : estBaseTokens + 140;
+  const terraOutputTokens =
+    liveTerraUsage?.output_tokens && liveTerraUsage.output_tokens > 0
+      ? liveTerraUsage.output_tokens
+      : numQuestions * 38 + 30;
+
+  const d1CostPerCallUsd =
+    (d1InputTokens / 1_000_000) * DECISION1_INPUT_PRICE_PER_1M_USD +
+    (d1OutputTokens / 1_000_000) * DECISION1_OUTPUT_PRICE_PER_1M_USD;
+
+  const terraCostPerCallUsd =
+    (terraInputTokens / 1_000_000) * TERRA_INPUT_PRICE_PER_1M_USD +
+    (terraOutputTokens / 1_000_000) * TERRA_OUTPUT_PRICE_PER_1M_USD;
+
+  const d1CostPer1kUsd = d1CostPerCallUsd * 1_000;
+  const terraCostPer1kUsd = terraCostPerCallUsd * 1_000;
+  const d1CostPer1MUsd = d1CostPerCallUsd * 1_000_000;
+  const terraCostPer1MUsd = terraCostPerCallUsd * 1_000_000;
+
+  const dailyVolume =
+    overrideDailyVolume ??
+    sample.estimatedDailyVolume ??
+    DEFAULT_DAILY_VOLUME_BY_ID[sample.id] ??
+    50_000;
+
+  const monthlyCalls = dailyVolume * 30;
+  const d1MonthlyUsd = d1CostPerCallUsd * monthlyCalls;
+  const terraMonthlyUsd = terraCostPerCallUsd * monthlyCalls;
+  const monthlySavingsUsd = Math.max(0, terraMonthlyUsd - d1MonthlyUsd);
+  const costMultiplier =
+    d1CostPerCallUsd > 0 ? Math.round(terraCostPerCallUsd / d1CostPerCallUsd) : 100;
+  const savingsPct =
+    terraCostPerCallUsd > 0
+      ? Number((((terraCostPerCallUsd - d1CostPerCallUsd) / terraCostPerCallUsd) * 100).toFixed(1))
+      : 99.0;
+
+  return {
+    d1InputTokens,
+    d1OutputTokens,
+    terraInputTokens,
+    terraOutputTokens,
+    d1CostPerCallUsd,
+    terraCostPerCallUsd,
+    d1CostPer1kUsd,
+    terraCostPer1kUsd,
+    d1CostPer1MUsd,
+    terraCostPer1MUsd,
+    dailyVolume,
+    d1MonthlyUsd,
+    terraMonthlyUsd,
+    monthlySavingsUsd,
+    costMultiplier,
+    savingsPct,
+    isLiveMeasured: Boolean(liveD1Usage?.input_tokens || liveTerraUsage?.input_tokens),
+  };
 }
 
 export interface QuestionCorrectness {

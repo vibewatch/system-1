@@ -77,19 +77,21 @@ export default function HomePage() {
       setCustomUseCases(localList);
     }
 
-    fetch("/api/usecases")
-      .then((r) => r.json())
-      .then((d) => {
-        if (Array.isArray(d.customUseCases)) {
-          const map = new Map<string, StudioSample>();
-          for (const item of [...localList, ...d.customUseCases]) {
-            map.set(item.id, item);
+    if (loadAzureConfig().mode === "backend") {
+      fetch("/api/usecases")
+        .then((r) => r.json())
+        .then((d) => {
+          if (Array.isArray(d.customUseCases)) {
+            const map = new Map<string, StudioSample>();
+            for (const item of [...localList, ...d.customUseCases]) {
+              map.set(item.id, item);
+            }
+            const merged = Array.from(map.values());
+            setCustomUseCases(merged);
           }
-          const merged = Array.from(map.values());
-          setCustomUseCases(merged);
-        }
-      })
-      .catch(() => {});
+        })
+        .catch(() => {});
+    }
   }, []);
 
   const handleSaveCustomUseCase = useCallback(async (uc: StudioSample) => {
@@ -251,6 +253,15 @@ export default function HomePage() {
   }, [theme]);
 
   useEffect(() => {
+    if (azureConfig.mode !== "backend") {
+      setWsConnected(false);
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      return;
+    }
+
     let alive = true;
     let reconnectTimer: NodeJS.Timeout | null = null;
 
@@ -264,14 +275,11 @@ export default function HomePage() {
       ws.onopen = () => {
         if (!alive) return;
         setWsConnected(true);
-        if (loadAzureConfig().mode === "backend") {
-          ws.send(JSON.stringify({ action: "health_check" }));
-        }
+        ws.send(JSON.stringify({ action: "health_check" }));
       };
 
       ws.onmessage = (ev) => {
         if (!alive) return;
-        if (loadAzureConfig().mode !== "backend") return;
         setWsEventCount((c) => c + 1);
         try {
           const parsed: WsIncomingMessage = JSON.parse(ev.data);
@@ -302,7 +310,7 @@ export default function HomePage() {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (wsRef.current) wsRef.current.close();
     };
-  }, []);
+  }, [azureConfig.mode]);
 
   const refreshHealth = () => {
     sendWs("health_check");

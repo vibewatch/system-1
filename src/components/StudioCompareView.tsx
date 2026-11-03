@@ -7,6 +7,7 @@ import {
   DecisionQuestion,
   QuestionType,
   computeCorrectnessSummary,
+  computeUseCaseEconomics,
 } from "@/lib/demo-data";
 import type { DecisionRunResult } from "@/lib/foundry";
 import { CustomSelect } from "./CustomSelect";
@@ -253,6 +254,28 @@ export default function StudioCompareView({
         terraResult?.answers
       ),
     [questions, activeExpected, d1Result?.answers, terraResult?.answers]
+  );
+
+  const economicsSummary = useMemo(
+    () =>
+      computeUseCaseEconomics(
+        {
+          id: activeSample.id,
+          content: stateText,
+          questions,
+          estimatedDailyVolume: activeSample.estimatedDailyVolume,
+        },
+        d1Result?.usage,
+        terraResult?.usage
+      ),
+    [
+      activeSample.id,
+      activeSample.estimatedDailyVolume,
+      stateText,
+      questions,
+      d1Result?.usage,
+      terraResult?.usage,
+    ]
   );
 
   const systemOnePayload = buildClientSystemOnePayload(stateText, questions);
@@ -714,6 +737,41 @@ export default function StudioCompareView({
                         (agreedCount / comparedCount) * 100
                       )}%)`
                     : "waiting…"}
+                </b>
+              </span>
+            </div>
+
+            <div
+              className="compare-agree"
+              style={{
+                flexWrap: "wrap",
+                gap: 10,
+                borderTop: "1px dashed var(--border-soft)",
+                paddingTop: 8,
+                marginTop: 4,
+              }}
+            >
+              <span>
+                Decision-1 Cost ($0.042/1M in, $0 out):{" "}
+                <b style={{ color: "var(--primary-bright)" }}>
+                  ${economicsSummary.d1CostPer1kUsd.toFixed(4)} / 1k calls
+                </b>
+              </span>
+              <span>
+                {comparisonModelName} Cost:{" "}
+                <b style={{ color: "var(--terra-bright)" }}>
+                  ${economicsSummary.terraCostPer1kUsd.toFixed(3)} / 1k calls
+                </b>
+              </span>
+              <span style={{ color: "var(--accent-d1)" }}>
+                Cost Savings:{" "}
+                <b>
+                  {economicsSummary.costMultiplier}&times; cheaper (
+                  {economicsSummary.savingsPct}% saved · $
+                  {economicsSummary.monthlySavingsUsd.toLocaleString("en-US", {
+                    maximumFractionDigits: 0,
+                  })}
+                  /mo @ {(economicsSummary.dailyVolume / 1000).toFixed(0)}k/day)
                 </b>
               </span>
             </div>
