@@ -100,8 +100,16 @@ async function main() {
     models: { decision1: health.decisionDeployment, terra: health.terraDeployment }, scenarios, recordings: [],
   };
   try {
-    const partial = JSON.parse(await readFile(checkpoint, "utf8")) as ReplayBundle;
-    if (partial.endpoint === bundle.endpoint && JSON.stringify(partial.models) === JSON.stringify(bundle.models)) bundle.recordings = partial.recordings;
+    let partial: ReplayBundle;
+    try { partial = JSON.parse(await readFile(checkpoint, "utf8")); }
+    catch (error) {
+      if (!process.argv.includes("--resume")) throw error;
+      partial = JSON.parse(await readFile(output, "utf8"));
+    }
+    if (partial.endpoint === bundle.endpoint && JSON.stringify(partial.models) === JSON.stringify(bundle.models)) {
+      bundle.recordings = partial.recordings;
+      bundle.recordedAt = partial.recordedAt;
+    }
   } catch {}
   await mkdir(dirname(output), { recursive: true });
   for (const [index, request] of requests.entries()) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { PublicClientApplication } from "@azure/msal-browser";
+import { runDecisionStory } from "./decision-story";
 import {
   CLAIM_DEMO,
   DecisionQuestion,
@@ -752,6 +753,15 @@ export class BrowserFoundryDispatcher {
         ...SHARED_ENTITY_FIELDS,
         ...scenario.extra,
       };
+      if (scenario.stages) {
+        await runDecisionStory({
+          scenario, questions, signal: abortCtrl.signal,
+          emit: (event, data) => this.emit(event, data),
+          decide: (tier, state, questions) => tier === 0 ? callDecision1Browser(cfg, state, questions) : callTerraDecisionBrowser(cfg, state, questions),
+          extract: (text) => extractEntitiesBrowser(cfg, text, fields),
+        });
+        return;
+      }
 
       const pick: Record<string, string> = {};
       for (const [k, arr] of Object.entries(scenario.fill)) {

@@ -31,14 +31,23 @@ Open **`http://localhost:3000`** and use **Options → Connection settings** to 
 
 ## Recorded demo replay
 
-Open **Options → Demo replay → Use recorded demos**. The normal comparison,
+The homepage leads with **Live story**: an authorized $75 refund, an untrusted
+tool redirect to $750, and recovery after fresh Finance approval. Choose
+**Play recorded story** for a short, sign-in-free demonstration, or **Run live
+checks** with your Azure connection. The input is scripted; both models evaluate
+the three checkpoints independently. The displayed action gate is a suggested
+application policy decision, not an executed payment or a general safety guarantee.
+Use the pastel shortcuts to inspect paired ground truth, queue pressure, or agent supervision.
+
+Alternatively, open **Options → Demo replay → Use recorded demos**. The normal comparison,
 conversation, queue and claims controls then play recorded Azure event timelines,
 without model calls or Entra ID sign-in. Pause/resume and 0.5×/1×/2×/4× playback
 are available. Latency, token usage and costs remain those of the original run;
 replay is explicitly labelled and is not a new performance benchmark.
 
-The included file contains **41 real Azure recordings**: 33 test cases for
-17 solutions (including the saved custom BGP gate), four conversations, three
+The included file contains **44 real Azure recordings**: 35 test cases for
+18 solutions (including the saved custom BGP gate), five stories (one scripted
+authorization trace and four generated conversations), three
 triage rates, and one claims workflow.
 The portable recording is **[`public/replays/showcase.json`](public/replays/showcase.json)**.
 Download it from the replay dialog, or import a version-1 JSON file there.
@@ -57,6 +66,9 @@ npm run replay:test
 ```
 
 Use `npm run replay:record -- --include-custom` to include saved custom scenarios.
+Add `--resume` to retain matching recordings from an existing completed archive
+when adding new cases. For changed runtime scripts or backend behavior, record a
+fresh archive rather than resuming old results.
 `REPLAY_WS_URL` and `REPLAY_OUTPUT` override the server and destination.
 Successful sessions are checkpointed so a failed run can resume; the final file
 is published only after all requested recordings complete successfully.

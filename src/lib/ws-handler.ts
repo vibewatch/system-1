@@ -1,4 +1,5 @@
 import type { WebSocket } from "ws";
+import { runDecisionStory } from "./decision-story";
 import {
   RUNTIME_SCENARIOS,
   RUNTIME_SYSTEM_PROMPT,
@@ -195,6 +196,15 @@ export function attachWebSocketClient(ws: WebSocket) {
         Array.isArray(payload.questions) && payload.questions.length > 0
           ? (payload.questions as DecisionQuestion[])
           : sc.questions;
+      if (sc.stages) {
+        await runDecisionStory({
+          scenario: sc, questions: activeQuestions, signal: ctrl.signal,
+          emit: (event, data) => send(ws, event, data),
+          decide: (tier, state, questions) => tier === 0 ? callDecision1(state, questions) : callGptTerraDecision(state, questions),
+          extract: (text) => extractSpansWithTerra(text, { ...SHARED_ENTITY_FIELDS, ...sc.extra }),
+        });
+        return;
+      }
       const pick = Object.fromEntries(
         Object.entries(sc.fill).map(([k, v]) => [k, pickOne(v)])
       );

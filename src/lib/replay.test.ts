@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { STUDIO_SAMPLES, RUNTIME_SCENARIOS, TRIAGE_FEED } from "./demo-data";
 import { ReplayDispatcher, parseReplayBundle, recordingMatches, type ReplayBundle } from "./replay";
+import { refundGate, runDecisionStory } from "./decision-story";
+import type { DecisionRunResult, NormalizedDecision } from "./foundry";
 
 const fixture = (): ReplayBundle => ({
   version: 1, recordedAt: "2026-11-03T00:00:00Z", endpoint: "https://example.invalid",
@@ -106,4 +108,82 @@ test("included recording covers every built-in case, stream, rate and claims for
     assert.equal(recording.events.filter((event) => event.event === "triage_item_done" && event.data.ok).length, TRIAGE_FEED.messages.length * 2);
   }
   assert(bundle.recordings.some((item) => item.action === "run_agent_form" && item.events.some((event) => event.event === "agent_done")));
+  const story = bundle.recordings.find((item) => item.id === "runtime-refund-guard")!;
+  assert.equal(story.events.filter((item) => item.event === "runtime_story_stage").length, 3);
+  for (const eventName of ["runtime_decision", "runtime_terra_decision"]) {
+    assert.deepEqual(story.events.filter((item) => item.event === eventName).map((item) => refundGate(item.data.answers)), ["allow", "block", "allow"]);
+  }
+});
+
+const emptyAnswer: NormalizedDecision = {
+  id: "", type: "noul", value: 0, label: "", cls: "unsure",
+  key: null, detail: "", confidence: 0, raw: null,
+};
+const refundAnswers = (action: string, approval = 1, redirected = 0): Record<string, NormalizedDecision> => ({
+  next_action: { ...emptyAnswer, id: "next_action", type: "choice", key: action },
+  approval_valid: { ...emptyAnswer, id: "approval_valid", value: approval },
+  recipient_changed: { ...emptyAnswer, id: "recipient_changed", value: redirected },
+});
+
+test("refund gate requires current authorization and holds incomplete or conflicting evidence", () => {
+  assert.equal(refundGate({}), "waiting");
+  assert.equal(refundGate(refundAnswers("allow_original_refund")), "allow");
+  assert.equal(refundGate(refundAnswers("allow_original_refund", 0.69)), "review");
+  assert.equal(refundGate(refundAnswers("allow_original_refund", 1, 0.31)), "review");
+  assert.equal(refundGate({ next_action: refundAnswers("allow_original_refund").next_action }), "review");
+  assert.equal(refundGate(refundAnswers("block_redirect")), "block");
+  assert.equal(refundGate(refundAnswers("pause_for_confirmation")), "review");
+});
+
+const storyResult = (answers: Record<string, NormalizedDecision>, ok = true): DecisionRunResult => ({
+  ok, status: ok ? 200 : 500, model: "mock", endpointUsed: "mock",
+  latency_ms: 10, usage: { input_tokens: 1, output_tokens: 0 },
+  answers, rawPayload: null, requestPayload: null, error: ok ? undefined : "Model failed",
+});
+
+test("staged story preserves its input and publishes the faster decision before the baseline", async () => {
+  const scenario = { ...RUNTIME_SCENARIOS[0], stages: [
+    { title: "Approve", text: "Approved." },
+    { title: "Intercept", text: "Redirected." },
+    { title: "Recover", text: "Reauthorized." },
+  ] };
+  const events: Array<{ event: string; data: any }> = [];
+  const evaluated: string[] = [];
+  await runDecisionStory({
+    scenario, questions: scenario.questions, signal: new AbortController().signal,
+    emit: (event, data) => events.push({ event, data }),
+    decide: async (tier, state) => {
+      evaluated.push(state);
+      if (tier === 1) await sleep(15);
+      return storyResult(refundAnswers(state.endsWith("Redirected.") ? "block_redirect" : "allow_original_refund"));
+    },
+    extract: async () => ({ spans: [], latency_ms: 0 }),
+  });
+  assert.equal(events.filter((item) => item.event === "runtime_token").at(-1)?.data.transcript, "Approved.\n\nRedirected.\n\nReauthorized.");
+  assert.equal(evaluated.length, 6);
+  assert(evaluated.every((state) => state.startsWith(scenario.header)));
+  assert.deepEqual(events.filter((item) => ["runtime_decision", "runtime_terra_decision"].includes(item.event)).map((item) => item.event), Array(3).fill(["runtime_decision", "runtime_terra_decision"]).flat());
+  assert.equal(events.at(-1)?.event, "runtime_done");
+  assert.equal(events.at(-1)?.data.inputSource, "scripted");
+});
+
+test("failed or stopped story never leaks late results or begins another checkpoint", async () => {
+  for (const stop of [false, true]) {
+    const controller = new AbortController();
+    const events: string[] = [];
+    await runDecisionStory({
+      scenario: { ...RUNTIME_SCENARIOS[0], stages: [{ title: "First", text: "First." }, { title: "Later", text: "Later." }] },
+      questions: RUNTIME_SCENARIOS[0].questions, signal: controller.signal,
+      emit: (event) => { events.push(event); if (stop && event === "runtime_decision") controller.abort(); },
+      decide: async (tier) => {
+        if (tier === 1) await sleep(25);
+        return storyResult(refundAnswers("allow_original_refund"), stop || tier === 1);
+      },
+      extract: async () => ({ spans: [], latency_ms: 0 }),
+    });
+    await sleep(35);
+    assert.equal(events.filter((event) => event === "runtime_story_stage").length, 1);
+    assert(!events.includes("runtime_terra_decision"));
+    assert.equal(events.includes("runtime_done"), !stop);
+  }
 });

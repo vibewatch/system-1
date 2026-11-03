@@ -11,6 +11,7 @@ import { Dialog } from "@/components/Dialog";
 import { ReplayControls } from "@/components/ReplayControls";
 import { ReplayDispatcher, parseReplayBundle, type ReplayBundle, type ReplayProgress } from "@/lib/replay";
 import {
+  RUNTIME_SCENARIOS,
   STUDIO_SAMPLES,
   type StudioSample,
   type DecisionQuestion,
@@ -38,7 +39,7 @@ export interface WsIncomingMessage {
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<
     "studio" | "framework" | "runtime" | "triage" | "form"
-  >("studio");
+  >("runtime");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [showGuide, setShowGuide] = useState(false);
   const toolsMenuRef = useRef<HTMLDetailsElement>(null);
@@ -90,6 +91,8 @@ export default function HomePage() {
   const [runtimeExternalScenarioId, setRuntimeExternalScenarioId] = useState<
     string | null
   >(null);
+  const [pendingStory, setPendingStory] = useState<string | null>(null);
+  const [runtimeLaunchKey, setRuntimeLaunchKey] = useState(0);
 
   const allUseCases = useMemo(() => {
     if (replayEnabled && replayBundle) return replayBundle.scenarios;
@@ -283,6 +286,36 @@ export default function HomePage() {
   }, [replayEnabled, replayBundle]);
 
   useEffect(() => {
+    if (!pendingStory || !replayEnabled || !replayBundle || activeTab !== "runtime") return;
+    const scenario = RUNTIME_SCENARIOS.find((item) => item.id === pendingStory);
+    const timer = window.setTimeout(() => {
+      setReplayError("");
+      replayDispatcherRef.current?.dispatch("start_runtime", {
+        scenarioId: pendingStory, questions: scenario?.questions || [],
+      });
+      setPendingStory(null);
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [pendingStory, replayEnabled, replayBundle, activeTab, runtimeLaunchKey]);
+
+  const playRecordedStory = (scenarioId: string) => {
+    if (pendingStory) return;
+    replayDispatcherRef.current?.stop();
+    setActiveTab("runtime");
+    setRuntimeExternalScenarioId(scenarioId);
+    setRuntimeLaunchKey((key) => key + 1);
+    setPendingStory(scenarioId);
+    setReplayError("");
+    setReplayEnabled(true);
+    try { window.localStorage.setItem(REPLAY_STORAGE_KEY, "true"); } catch {}
+    if (!replayBundle) void loadReplay();
+  };
+
+  useEffect(() => {
+    if (pendingStory && replayError && !replayLoading) setPendingStory(null);
+  }, [pendingStory, replayError, replayLoading]);
+
+  useEffect(() => {
     replayDispatcherRef.current?.setSpeed(replaySpeed);
   }, [replaySpeed]);
 
@@ -387,7 +420,7 @@ export default function HomePage() {
       };
 
       ws.onmessage = (ev) => {
-        if (!alive) return;
+        if (!alive || replayEnabledRef.current) return;
         setWsEventCount((c) => c + 1);
         try {
           const parsed: WsIncomingMessage = JSON.parse(ev.data);
@@ -460,7 +493,7 @@ export default function HomePage() {
     <div className="app-shell">
       <a className="skip-link" href="#workspace-content">Skip to workspace</a>
       <header className="topbar">
-        <button className="brand brand-home" onClick={() => setActiveTab("studio")} aria-label="Microsoft-Decision-1 home">
+        <button className="brand brand-home" onClick={() => setActiveTab("runtime")} aria-label="Microsoft-Decision-1 home">
           <div className="brand-mark">M1</div>
           <div>
             <span className="brand-title">
@@ -471,6 +504,13 @@ export default function HomePage() {
         </button>
 
         <nav className="nav-tabs" aria-label="Primary Workspaces">
+          <button
+            className={`nav-tab ${activeTab === "runtime" ? "active" : ""}`}
+            onClick={() => setActiveTab("runtime")}
+            aria-current={activeTab === "runtime" ? "page" : undefined}
+          >
+            Live story
+          </button>
           <button
             className={`nav-tab ${activeTab === "studio" ? "active" : ""}`}
             onClick={() => setActiveTab("studio")}
@@ -486,9 +526,9 @@ export default function HomePage() {
             Solutions
           </button>
           <details className="header-menu" ref={examplesMenuRef}>
-            <summary className={`nav-tab ${["runtime", "triage", "form"].includes(activeTab) ? "active" : ""}`}>More demos <span aria-hidden="true">⌄</span></summary>
+            <summary className={`nav-tab ${["triage", "form"].includes(activeTab) ? "active" : ""}`}>More demos <span aria-hidden="true">⌄</span></summary>
             <div className="header-menu-panel">
-              {([["runtime", "Live conversation", "Decide as words arrive"], ["triage", "Queue triage", "Compare throughput at scale"], ["form", "Claims workflow", "Policy gates and form extraction"]] as const).map(([tab, title, description]) =>
+              {([["triage", "Queue triage", "Compare throughput at scale"], ["form", "Claims workflow", "Policy gates and form extraction"]] as const).map(([tab, title, description]) =>
                 <button key={tab} onClick={() => { setActiveTab(tab); if (examplesMenuRef.current) examplesMenuRef.current.open = false; }} aria-current={activeTab === tab ? "page" : undefined}>
                   <strong>{title}</strong><small>{description}</small>
                 </button>
@@ -523,6 +563,7 @@ export default function HomePage() {
         open={replayOpen} onClose={() => setReplayOpen(false)} bundle={replayBundle} enabled={replayEnabled}
         loading={replayLoading} error={replayError} progress={replayProgress} speed={replaySpeed}
         onEnable={(enabled) => {
+          setPendingStory(null);
           setReplayEnabled(enabled);
           setReplayError("");
           setActiveTab("studio");
@@ -598,7 +639,7 @@ export default function HomePage() {
       )}
 
       <div id="workspace-content" tabIndex={-1}>
-      {activeTab in workflowDescriptions && (
+      {activeTab !== "runtime" && activeTab in workflowDescriptions && (
         <div className="workspace-intro">
           <button className="text-button" onClick={() => setActiveTab("studio")}>&larr; Back to comparison</button>
           <h1>{workflowDescriptions[activeTab as keyof typeof workflowDescriptions].title}</h1>
@@ -607,11 +648,17 @@ export default function HomePage() {
       )}
       <div style={{ display: activeTab === "runtime" ? "block" : "none" }}>
         <RuntimeView
-          key={replayEnabled ? `replay-runtime-${replayBundle?.recordedAt}` : "live-runtime"}
+          key={`${replayEnabled ? `replay-runtime-${replayBundle?.recordedAt}` : "live-runtime"}-${runtimeLaunchKey}`}
           sendWs={sendWs}
           subscribeWs={subscribeWs}
           wsConnected={effectiveReady}
           externalScenarioId={runtimeExternalScenarioId}
+          replayMode={replayEnabled}
+          replayLoading={replayLoading || pendingStory !== null}
+          comparisonModelName={comparisonModelLabel}
+          onPlayRecorded={playRecordedStory}
+          onOpenWorkbench={() => handleLaunchInStudio(allUseCases.find((sample) => sample.id === "refund-authorization") || STUDIO_SAMPLES[0])}
+          onOpenTriage={() => setActiveTab("triage")}
         />
       </div>
 
