@@ -16,9 +16,9 @@ Interactive Next.js 15 enterprise showcase and head-to-head correctness & cost b
    - Browser-only execution remains selectable in **Connection settings**. Replay and live-transport preferences are separate.
 
 2. **5 Interactive Decision Workflows**
-   - **01 · Stream + Decide**: Streams live conversations word-by-word while `Microsoft-Decision-1` re-evaluates `NOUL`, `CHOICE`, and `SCORE` questions on every word with live probability sparklines and mind-change markers.
+   - **01 · Stream + Decide**: Streams conversations incrementally while both models evaluate `NOUL`, `CHOICE`, and `SCORE` questions with probability sparklines and answer-change markers. Each model permits one in-flight request and can skip intermediate snapshots; their update cadences are not a controlled same-snapshot benchmark.
    - **02 · Decision Studio**: Head-to-head latency race, calibrated probability distributions, Ground-Truth **Correctness Matrix**, raw JSON inspector, and copyable Entra ID `curl` commands.
-   - **03 · Triage at Scale**: High-throughput customer message queue simulation at 5/10/20 msgs/sec comparing sub-350ms `Microsoft-Decision-1` routing vs multi-second generative LLM bottlenecks.
+   - **03 · Triage at Scale**: The same 40 customer messages arrive at 5/10/20 msgs/sec in two model lanes with 8 and 4 workers, respectively. Outstanding work includes running requests; average wait measures arrival to completion. Queue behavior reflects both concurrency and request latency, not an equal-concurrency benchmark.
    - **04 · Agent Gate & Form**: Pre-execution policy gate + 13-field entity span extraction + gated customer reply drafting.
    - **05 · Solutions & Benchmarks Hub**: **16 Enterprise Solutions across 9 Industry Verticals** with multi-case **Ground-Truth Correctness & Model Agreement** benchmarks (`Case 1: Violation / High-Risk` vs `Case 2: Compliant / Safe Pass`), plus an interactive **Custom Solution Studio** to author, test, and save your own solutions.
 
@@ -32,9 +32,13 @@ PORT=3000 npm run start
 
 Open **`http://localhost:3000`** to use recorded demos without signing in. Open **Demo replay → Return to live mode** for new evaluations; **Connection settings** selects the live transport and browser credentials.
 
+For backend live execution, put `AZURE_FOUNDRY_ENDPOINT=https://<your-foundry-resource>.cognitiveservices.azure.com` in an ignored `.env.local` file and authenticate with `az login`. Optionally set `AZURE_FALLBACK_DECISION_ENDPOINT` for a separate Decision-1 resource. Production resource addresses are not frontend defaults or public replay metadata.
+
 ## Replay recordings
 
-`public/replays/showcase.json` contains original Azure outputs and event offsets, reused from the project's recorded demonstration history. No responses are synthesized during playback. Imported files remain in the current tab; a reload restores the included bundle. Review custom inputs before sharing exported files.
+The in-app **Watch technical demo** opens a 1:55 English-narrated walkthrough of Stream and Triage, with English captions and chapter navigation. It shows original recorded Azure events at 1× speed, explains snapshot scheduling, worker limits and queue metrics, and makes no live model calls. The [1080p MP4](public/demo-microsoft-decision-1.mp4) contains no music or promotional narration.
+
+`public/replays/showcase.json` contains original Azure outputs and event offsets, reused from the project's recorded demonstration history. No responses are synthesized during playback. Infrastructure endpoints and common authentication/identity metadata are redacted recursively on import, recording/checkpoint writes and export, without changing answers or measurements. Imported files remain in the current tab; a reload restores the included bundle. Redaction cannot identify every kind of confidential prose: review custom inputs and outputs before sharing exported files.
 
 ```bash
 npm run replay:test
@@ -42,7 +46,7 @@ npm run replay:test
 npm run replay:record -- --include-custom --resume
 ```
 
-The recorder validates both models, saves resumable checkpoints, and preserves matching existing recordings. Without `--resume`, use a fresh output path to record a separate run.
+The recorder validates both models, saves redacted resumable checkpoints, and preserves matching existing recordings. Redacted files omit resource identity, so reusing them requires explicit `--resume` and matches model names, inputs and question schemas. Without `--resume`, use a fresh output path to record a separate run.
 
 ## Shared typography and controls
 

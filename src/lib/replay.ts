@@ -38,6 +38,22 @@ const EVENTS = new Set([
   "triage_started", "triage_arrival", "triage_item_done", "triage_done",
   "agent_step", "agent_gates_done", "agent_field_filled", "agent_done",
 ]);
+export const PUBLIC_REPLAY_ENDPOINT = "https://<your-foundry-resource>.cognitiveservices.azure.com";
+
+export function redactReplayBundle(bundle: ReplayBundle): ReplayBundle {
+  return JSON.parse(JSON.stringify(bundle, (key, value: unknown) => {
+    const field = key.replace(/[-_]/g, "").toLowerCase();
+    if (["endpoint", "endpointused", "endpointurl", "foundryendpoint"].includes(field)) return PUBLIC_REPLAY_ENDPOINT;
+    if (/^(authorization|proxyauthorization|(?:request|response)?headers|(?:azure(?:openai)?)?apikey|access(?:token|key)|refreshtoken|idtoken|clientsecret|password|credentials|connectionstring|subscriptionid|tenantid|resourceid|clientid)$/.test(field)) return "[redacted]";
+    if (typeof value !== "string") return value;
+    return value
+      .replace(/\b[a-z0-9-]+(?:\.privatelink)?\.cognitiveservices\.azure\.(?:com|us|cn)\b/gi, "<your-foundry-resource>.cognitiveservices.azure.com")
+      .replace(/\b(?:Bearer|Basic)\s+[a-z0-9._~+\/=-]{16,}/gi, "[redacted-authorization]")
+      .replace(/\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b/gi, "[redacted-token]")
+      .replace(/\b(api[-_]?key|access[-_]?token|client[-_]?secret)\s*[:=]\s*["']?[^"'\s&,;]+/gi, "$1=[redacted]")
+      .replace(/\/subscriptions\/[^/\s"'<>]+\/resourceGroups\/[^/\s"'<>]+(?:\/providers\/[^/\s"'<>]+(?:\/[^/\s"'<>]+)*)?/gi, "[redacted-resource-id]");
+  })) as ReplayBundle;
+}
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -85,7 +101,7 @@ export function parseReplayBundle(value: unknown): ReplayBundle {
     const terminal = { run_compare: "compare_finished", start_runtime: "runtime_done", start_triage: "triage_done", run_agent_form: "agent_done" }[recording.action];
     if (!recording.events.some((event) => event.event === terminal)) throw new Error("Incomplete recording: missing final event.");
   }
-  return bundle;
+  return redactReplayBundle(bundle);
 }
 
 export class ReplayDispatcher {

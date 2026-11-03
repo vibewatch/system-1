@@ -219,7 +219,7 @@ export default function TriageScaleView({
           </p>
           <h1>
             {N} messages at {rate}/sec.{" "}
-            <strong>Watch one queue drain and the other back up.</strong>
+            <strong>Compare arrivals, completions, and outstanding work.</strong>
           </h1>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", maxWidth: "100%" }}>
@@ -404,17 +404,16 @@ export default function TriageScaleView({
         {d1FinishInfo && (
           <div className="reveal" style={{ marginBottom: 16, marginTop: 0 }}>
             <div className="verdict-big">
-              Microsoft-Decision-1 finished all {N} messages ·{" "}
+              At Microsoft-Decision-1 completion ({N}/{N}) ·{" "}
               <span style={{ color: "var(--terra-bright)" }}>
-                {comparisonModelName} still has {d1FinishInfo.terraRemaining} waiting in
-                queue
+                {comparisonModelName} had {d1FinishInfo.terraRemaining} outstanding
               </span>
             </div>
             <div style={{ color: "var(--text-muted)", fontSize: "var(--font-md)" }}>
               Decision-1 average end-to-end queue + inference wait:{" "}
-              <b>{(d1FinishInfo.d1AvgWait / 1000).toFixed(1)}s</b>. Because
-              Decision-1 evaluates all criteria in a single forward pass with
-              zero token generation loop, queues drain instead of compounding.
+              <b>{(d1FinishInfo.d1AvgWait / 1000).toFixed(1)}s</b>. This snapshot
+              includes running requests. The lanes use 8 and 4 workers,
+              respectively; this is not an equal-concurrency benchmark.
             </div>
           </div>
         )}

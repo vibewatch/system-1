@@ -61,7 +61,7 @@ export default function StudioCompareView({
   comparisonModelName = "gpt-6.1-terra",
   decisionModelName = "Decision-1",
   replayMode = false,
-  endpointUrl = "https://icsuaaisea.cognitiveservices.azure.com",
+  endpointUrl = "https://<your-foundry-resource>.cognitiveservices.azure.com",
   allUseCases,
   externalSample,
   externalTrigger,
@@ -483,7 +483,7 @@ export default function StudioCompareView({
                   className="wb-purpose-kicker"
                   style={{ color: "var(--terra)" }}
                 >
-                  <span>01 · Business Problem Solved (解决什么业务问题)</span>
+                  <span>01 · Business Problem Solved</span>
                 </div>
                 <p className="wb-purpose-body">{narrative.problemSolved}</p>
               </div>
@@ -493,7 +493,7 @@ export default function StudioCompareView({
                   style={{ color: "var(--primary)" }}
                 >
                   <span>
-                    02 · What This Proves About Microsoft-Decision-1 (证明什么能力)
+                    02 · What This Proves About Microsoft-Decision-1
                   </span>
                 </div>
                 <p className="wb-purpose-body">{narrative.whatItProves}</p>

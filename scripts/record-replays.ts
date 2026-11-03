@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir, rename, unlink } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import WebSocket from "ws";
 import { CLAIM_DEMO, RUNTIME_SCENARIOS, STUDIO_SAMPLES, TRIAGE_FEED, type StudioSample } from "../src/lib/demo-data";
-import { parseReplayBundle, type ReplayBundle, type ReplayRecording } from "../src/lib/replay";
+import { parseReplayBundle, redactReplayBundle, PUBLIC_REPLAY_ENDPOINT, type ReplayBundle, type ReplayRecording } from "../src/lib/replay";
 
 const output = resolve(process.env.REPLAY_OUTPUT || "public/replays/showcase.json");
 const checkpoint = `${output}.partial`;
@@ -106,8 +106,9 @@ async function main() {
       if (!process.argv.includes("--resume")) throw error;
       partial = JSON.parse(await readFile(output, "utf8"));
     }
-    if (partial.endpoint === bundle.endpoint && JSON.stringify(partial.models) === JSON.stringify(bundle.models)) {
-      bundle.recordings = partial.recordings;
+    const sameSource = partial.endpoint === bundle.endpoint || (partial.endpoint === PUBLIC_REPLAY_ENDPOINT && process.argv.includes("--resume"));
+    if (sameSource && JSON.stringify(partial.models) === JSON.stringify(bundle.models)) {
+      bundle.recordings = redactReplayBundle(partial).recordings;
       bundle.recordedAt = partial.recordedAt;
     }
   } catch {}
@@ -130,11 +131,11 @@ async function main() {
       }
     }
     bundle.recordings = [...bundle.recordings.filter((recording) => recording.id !== request.id), completed!];
-    await writeFile(checkpoint, JSON.stringify(bundle));
+    await writeFile(checkpoint, JSON.stringify(redactReplayBundle(bundle)));
     console.log(`[${index + 1}/${requests.length}] Recorded ${request.label}: ${completed!.events.length} events / ${(completed!.durationMs / 1000).toFixed(1)}s`);
   }
   bundle.recordings = requests.map((request) => bundle.recordings.find((recording) => recording.id === request.id)!);
-  parseReplayBundle(bundle);
+  bundle = parseReplayBundle(bundle);
   await writeFile(`${output}.ready`, JSON.stringify(bundle));
   await rename(`${output}.ready`, output);
   await unlink(checkpoint).catch((error: NodeJS.ErrnoException) => {

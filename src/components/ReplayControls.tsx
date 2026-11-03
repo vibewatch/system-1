@@ -2,7 +2,7 @@
 
 import { Dialog } from "./Dialog";
 import { CustomSelect } from "./CustomSelect";
-import type { ReplayBundle, ReplayProgress } from "@/lib/replay";
+import { redactReplayBundle, type ReplayBundle, type ReplayProgress } from "@/lib/replay";
 import { IconButton } from "./IconButton";
 import { Download, Pause, Play, Square, X } from "lucide-react";
 
@@ -28,7 +28,7 @@ export function ReplayControls({
 }) {
   const download = () => {
     if (!bundle) return;
-    const url = URL.createObjectURL(new Blob([JSON.stringify(bundle)], { type: "application/json" }));
+    const url = URL.createObjectURL(new Blob([JSON.stringify(redactReplayBundle(bundle))], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
     link.download = "system-1-demo-replay.json";
@@ -69,7 +69,7 @@ export function ReplayControls({
         <progress max={progress.durationMs || 1} value={progress.elapsedMs} />
         {progress.playing && <div className="replay-file-actions"><IconButton label={progress.paused ? "Resume replay" : "Pause replay"} icon={progress.paused ? <Play size={16} /> : <Pause size={16} />} tag={progress.paused ? "Resume" : "Pause"} onClick={progress.paused ? onResume : onPause} /><IconButton label="Stop replay" icon={<Square size={16} />} tag="Stop" onClick={onStop} /></div>}
       </div>}
-      <p className="detail-note">Use the normal Compare, Stream, Triage and Claims buttons after enabling replay. Unrecorded inputs and custom questions are rejected rather than given invented results. Imported files stay in this tab; reloading restores the included recordings. Downloaded files include demo inputs and outputs; review any custom data before sharing.</p>
+      <p className="detail-note">Use the normal Compare, Stream, Triage and Claims buttons after enabling replay. Unrecorded inputs and custom questions are rejected rather than given invented results. Imported files stay in this tab; reloading restores the included recordings. Resource endpoints and common authentication metadata are redacted on import and download. Files still include demo inputs and outputs; review custom data before sharing.</p>
       <button className="primary" disabled={!enabled && (!bundle || loading)} onClick={() => { onEnable(!enabled); onClose(); }}>{enabled ? "Return to live mode" : "Use recorded demos"} &rarr;</button>
     </div>
   </Dialog>;

@@ -6,9 +6,9 @@ import type { DecisionQuestion } from "./demo-data";
 const execFileAsync = promisify(execFile);
 
 export const DEFAULT_FOUNDRY_ENDPOINT =
-  process.env.AZURE_FOUNDRY_ENDPOINT || "https://icsuaaisea.cognitiveservices.azure.com";
+  process.env.AZURE_FOUNDRY_ENDPOINT || "";
 export const FALLBACK_DECISION_ENDPOINT =
-  process.env.AZURE_FALLBACK_DECISION_ENDPOINT || "https://icsuaaije.cognitiveservices.azure.com";
+  process.env.AZURE_FALLBACK_DECISION_ENDPOINT || "";
 export const DECISION_DEPLOYMENT = process.env.AZURE_DECISION_DEPLOYMENT || "Decision-1";
 export const TERRA_DEPLOYMENT = process.env.AZURE_TERRA_DEPLOYMENT || "gpt-6.1-terra";
 
@@ -318,7 +318,7 @@ export async function callDecision1(
 }
 
 /**
- * Call gpt-6.1-terra on https://icsuaaisea.cognitiveservices.azure.com
+ * Call the configured comparison model on the private Foundry endpoint.
  * Supports both /openai/v1/responses and /openai/v1/chat/completions
  */
 export async function callTerraText(
@@ -339,7 +339,7 @@ export async function callTerraText(
   const base = (customEndpoint || DEFAULT_FOUNDRY_ENDPOINT).replace(/\/+$/, "");
   const t0 = performance.now();
 
-  // First try /openai/v1/responses on icsuaaisea (verified 200 OK with low latency & 0 reasoning overhead)
+  // Prefer the Responses API before falling back to Chat Completions.
   try {
     const res = await fetch(`${base}/openai/v1/responses`, {
       method: "POST",

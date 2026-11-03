@@ -1,0 +1,123 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:03.366
+This is recorded Azure output at original
+event
+
+00:00:03.366 --> 00:00:06.732
+timing. The walkthrough follows streaming
+decisions and message
+
+00:00:06.732 --> 00:00:10.099
+triage; it does not make live model
+requests.
+
+00:00:10.499 --> 00:00:15.280
+Stream consumes a conversation
+incrementally. Token events update the
+
+00:00:15.280 --> 00:00:20.061
+transcript; separate model decision events
+update the probability charts.
+
+00:00:20.461 --> 00:00:23.765
+Pause freezes the playback timeline. The
+question
+
+00:00:23.765 --> 00:00:27.070
+schema combines Boolean probabilities, a
+categorical topic,
+
+00:00:27.070 --> 00:00:29.902
+and an ordinal customer mood score.
+
+00:00:30.302 --> 00:00:33.244
+Each model allows one in flight request
+
+00:00:33.244 --> 00:00:36.186
+and then evaluates the latest available
+snapshot.
+
+00:00:36.186 --> 00:00:39.128
+Intermediate snapshots can be skipped, so
+these
+
+00:00:39.128 --> 00:00:42.070
+call counts do not represent identical
+sampling.
+
+00:00:43.247 --> 00:00:46.264
+Triage feeds the same forty messages into
+both
+
+00:00:46.264 --> 00:00:49.281
+lanes. The worker limits are eight for
+Decision
+
+00:00:49.281 --> 00:00:52.298
+One and four for the language model
+baseline.
+
+00:00:52.698 --> 00:00:56.065
+This burst arrives at twenty messages per
+second.
+
+00:00:56.065 --> 00:00:59.432
+The counters and result events show how
+outstanding
+
+00:00:59.432 --> 00:01:01.958
+work accumulates under those worker
+limits.
+
+00:01:02.358 --> 00:01:05.471
+The in queue counter includes requests
+still running.
+
+00:01:05.471 --> 00:01:08.585
+Average wait is arrival to completion
+time, so
+
+00:01:08.585 --> 00:01:11.699
+it includes both queuing and model request
+time.
+
+00:01:12.099 --> 00:01:16.097
+Playback resumes from the same event
+position. Worker counts
+
+00:01:16.097 --> 00:01:20.095
+and request latencies both influence the
+outcome; this is
+
+00:01:20.095 --> 00:01:24.092
+a pipeline demonstration, not a controlled
+concurrency benchmark. Throughput
+
+00:01:24.092 --> 00:01:28.090
+uses the original recording clock, not the
+playback speed.
+
+00:01:29.816 --> 00:01:33.460
+Each completed message retains its
+classification and
+
+00:01:33.460 --> 00:01:37.105
+extracted spans. The dashboard aggregates
+those decisions
+
+00:01:37.105 --> 00:01:40.749
+into department, severity, and churn risk
+counts.
+
+00:01:41.149 --> 00:01:45.712
+Replay files preserve inputs, question
+schemas, model outputs, and
+
+00:01:45.712 --> 00:01:50.274
+original timing. New inputs require live
+mode, using WebSocket
+
+00:01:50.274 --> 00:01:54.329
+events and Entra ID authentication on the
+backend.

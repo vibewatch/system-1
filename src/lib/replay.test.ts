@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { STUDIO_SAMPLES, RUNTIME_SCENARIOS, TRIAGE_FEED } from "./demo-data";
-import { ReplayDispatcher, parseReplayBundle, recordingMatches, type ReplayBundle } from "./replay";
+import { ReplayDispatcher, parseReplayBundle, recordingMatches, redactReplayBundle, PUBLIC_REPLAY_ENDPOINT, type ReplayBundle } from "./replay";
 
 const fixture = (): ReplayBundle => ({
   version: 1, recordedAt: "2026-11-03T00:00:00Z", endpoint: "https://example.invalid",
@@ -96,8 +96,64 @@ test("imported log markup cannot run HTML but retains bold labels", async () => 
   dispatcher.stop();
 });
 
+test("redacts nested infrastructure and auth metadata without changing recorded decisions", () => {
+  const bundle = fixture();
+  const privateHost = "private-example.cognitiveservices.azure.com";
+  bundle.endpoint = `https://${privateHost}`;
+  const result = bundle.recordings[0].events[1].data.result;
+  Object.assign(result, {
+    endpointUsed: `https://${privateHost}`,
+    requestHeaders: { Authorization: "Bearer example-secret-token" },
+    rawPayload: {
+      tenantId: "example-tenant",
+      nested: [{ api_key: "example-api-key", client_secret: "example-client-secret" }],
+      log: `POST https://${privateHost}/providers/microsoft/v1/systemone Authorization: Bearer example-secret-token`,
+      token: "ordinary conversation word",
+      description: "Basic factual replies use short inputs.",
+    },
+  });
+  const redacted = redactReplayBundle(bundle);
+  const serialized = JSON.stringify(redacted);
+  for (const privateValue of [privateHost, "example-secret-token", "example-tenant", "example-api-key", "example-client-secret"]) {
+    assert(!serialized.includes(privateValue));
+  }
+  const publicResult = redacted.recordings[0].events[1].data.result;
+  assert.equal(redacted.endpoint, PUBLIC_REPLAY_ENDPOINT);
+  assert.equal(publicResult.endpointUsed, PUBLIC_REPLAY_ENDPOINT);
+  assert.equal(publicResult.latency_ms, result.latency_ms);
+  assert.deepEqual(publicResult.answers, result.answers);
+  assert.equal(publicResult.rawPayload.token, "ordinary conversation word");
+  assert.equal(publicResult.rawPayload.description, result.rawPayload.description);
+  assert(publicResult.rawPayload.log.includes("/providers/microsoft/v1/systemone"));
+  assert.equal(bundle.endpoint, `https://${privateHost}`);
+  assert.deepEqual(redactReplayBundle(redacted), redacted);
+});
+
+test("legacy imports emit redacted replay API results and health metadata", async () => {
+  const bundle = fixture();
+  bundle.endpoint = "https://legacy-example.cognitiveservices.azure.com";
+  bundle.recordings[0].events[1].data.result.endpointUsed = bundle.endpoint;
+  bundle.recordings[0].events[1].data.result.rawPayload = {
+    diagnostic: "eyJhbGciOiJub25lIn0.eyJzZWNyZXQiOiJkZW1vIn0.signature",
+  };
+  const parsed = parseReplayBundle(bundle);
+  const events: any[] = [];
+  const dispatcher = new ReplayDispatcher(parsed, event => events.push(event));
+  dispatcher.dispatch("health_check");
+  dispatcher.setSpeed(4);
+  dispatcher.dispatch("run_compare", parsed.recordings[0].payload);
+  await sleep(80);
+  assert.equal(events[0].data.endpoint, PUBLIC_REPLAY_ENDPOINT);
+  assert(!JSON.stringify(events).includes("legacy-example"));
+  assert(!JSON.stringify(events).includes("eyJhbGci"));
+  assert.equal(events.find(event => event.event === "compare_model_done").data.result.latency_ms, 22);
+  dispatcher.stop();
+});
+
 test("included recording covers every built-in case, stream, rate and claims form", async () => {
-  const bundle = parseReplayBundle(JSON.parse(await readFile("public/replays/showcase.json", "utf8")));
+  const source = JSON.parse(await readFile("public/replays/showcase.json", "utf8"));
+  assert.deepEqual(source, redactReplayBundle(source), "The published archive must already be redacted before download");
+  const bundle = parseReplayBundle(source);
   for (const sample of STUDIO_SAMPLES) {
     for (const testCase of sample.testCases?.length ? sample.testCases : [{ content: sample.content }]) {
       const recording = bundle.recordings.find((item) => recordingMatches(item, "run_compare", { state: testCase.content, questions: sample.questions }));

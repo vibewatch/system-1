@@ -297,7 +297,7 @@ export default function RuntimeView({
         <div className="turn note">
           Click <b>{replayMode ? "Replay conversation" : "Stream Conversation"}</b> to {replayMode ? "replay a recorded" : "generate a live"} customer
           conversation via <code>{comparisonModelName}</code> and watch{" "}
-          <b>Microsoft-Decision-1</b> re-evaluate every decision on every word
+          <b>Microsoft-Decision-1</b> evaluate successive transcript snapshots{" "}
           {replayMode ? "from the original Azure event timeline." : "over WebSocket."}
         </div>
       );
@@ -442,15 +442,16 @@ export default function RuntimeView({
             01 · {replayMode ? "RECORDED EVENT TIMELINE" : "REAL-TIME WEBSOCKET STREAMING"} + SYSTEMONE DECISIONS
           </p>
           <h1>
-            Every new word, <strong>re-decided live.</strong>
+            Streaming transcripts, <strong>structured decisions.</strong>
           </h1>
         </div>
         <p className="hero-copy">
           As a customer or agent conversation {replayMode ? "replays from its recorded timeline" : "streams in over WebSocket"},{" "}
           <b>Microsoft-Decision-1</b> (
-          <code>/providers/microsoft/v1/systemone</code>) re-evaluates every
-          typed question on every new word while racing <b>{comparisonModelName}</b> in
-          parallel.
+          <code>/providers/microsoft/v1/systemone</code>) evaluates typed questions
+          alongside <b>{comparisonModelName}</b>. Each model processes the latest
+          available snapshot with one request in flight; intermediate snapshots
+          can be skipped.
         </p>
       </section>
 
@@ -708,7 +709,7 @@ export default function RuntimeView({
             {!flipcast ? (
               <>
                 <span className="eyebrow">
-                  WATCHING · RE-DECIDING EVERY WORD OVER WEBSOCKET
+                  WATCHING · STRUCTURED DECISION EVENTS
                 </span>
                 <div
                   style={{
@@ -717,9 +718,9 @@ export default function RuntimeView({
                     marginTop: 6,
                   }}
                 >
-                  Each question starts uncertain. The instant a single new word
-                  flips <b>Microsoft-Decision-1</b>, it is announced here and
-                  pinned inside the transcript.
+                  Each question starts uncertain. When a decision event changes
+                  a <b>Microsoft-Decision-1</b> answer, the update appears here and
+                  is pinned inside the transcript.
                 </div>
               </>
             ) : (

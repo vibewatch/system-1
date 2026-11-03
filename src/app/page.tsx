@@ -30,6 +30,19 @@ import {
 
 const CUSTOM_SOLUTIONS_LS_KEY = "ms_decision1_custom_solutions_v1";
 const DEMO_MODE_KEY = "ms_decision1_demo_mode_v2";
+const TECHNICAL_DEMO = {
+  src: "./demo-microsoft-decision-1.mp4?v=stream-triage-v2",
+  captions: "./demo-microsoft-decision-1.en.vtt?v=stream-triage-v2",
+  duration: "1:55",
+  chapters: [
+    { label: "Recording context · 0:00", sec: 0 },
+    { label: "Stream events · 0:10", sec: 10.498625 },
+    { label: "Typed decisions · 0:20", sec: 20.460583 },
+    { label: "Triage pipeline · 0:43", sec: 43.247375 },
+    { label: "Queue metrics · 1:02", sec: 62.357667 },
+    { label: "Replay & live · 1:41", sec: 101.149334 },
+  ],
+};
 
 export interface WsIncomingMessage {
   event: string;
@@ -480,7 +493,7 @@ export default function HomePage() {
           <IconButton label="Demo replay" icon={replayEnabled ? <Play size={17} /> : <Radio size={17} />} tag={replayEnabled ? "Replay" : "Live"} className={replayEnabled ? "active" : ""} tooltip={replayEnabled ? "Recorded demos · playback, import, download or switch to live" : "Live execution · open replay options"} onClick={() => setReplayOpen(true)} />
           <IconButton label="Connection settings" icon={<Settings2 size={17} />} tooltip={`Connection settings · ${replayEnabled ? "settings apply to live mode" : azureConfig.mode === "backend" ? "Backend server" : "Browser-only execution"}`} onClick={() => setSettingsOpen(true)} />
           <div className="header-secondary-actions">
-            <IconButton label="Watch product tour" icon={<Video size={17} />} tooltip="Watch the 69-second narrated product tour" onClick={() => setDemoVideoOpen(true)} />
+            <IconButton label="Watch technical demo" icon={<Video size={17} />} tooltip={`Stream and Triage technical walkthrough · ${TECHNICAL_DEMO.duration} · English narration and captions`} onClick={() => setDemoVideoOpen(true)} />
             <IconButton label={showGuide ? "Hide quick guide" : "Show quick guide"} icon={<HelpCircle size={17} />} aria-pressed={showGuide} onClick={() => setShowGuide((value) => !value)} />
             <IconButton label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"} icon={theme === "light" ? <Moon size={17} /> : <Sun size={17} />} onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} />
           </div>
@@ -689,7 +702,7 @@ export default function HomePage() {
             <dt>Decision deployment</dt><dd className="d1">{decisionModelLabel}</dd>
             <dt>LLM baseline</dt><dd className="terra">{comparisonModelLabel}</dd>
             <dt>Metadata source</dt><dd>{modelSource}</dd>
-            <dt>Foundry resource</dt><dd>{endpointLabel || "Waiting for live connection metadata"}</dd>
+            <dt>Foundry resource</dt><dd>{replayEnabled ? "Redacted for public replay" : endpointLabel || "Waiting for live connection metadata"}</dd>
             <dt>Status</dt><dd>{replayEnabled ? replayLoading ? "Loading recordings" : replayReady ? "Ready · no sign-in needed" : "Recording unavailable" : health?.error || (effectiveReady ? "Connected" : "Waiting for live connection")}</dd>
             {replayEnabled && replayBundle && <><dt>Recorded</dt><dd>{new Date(replayBundle.recordedAt).toLocaleString()}</dd></>}
           </dl>
@@ -700,34 +713,26 @@ export default function HomePage() {
       <Dialog open={moreOpen} onClose={() => setMoreOpen(false)} title="More actions" maxWidth={380}>
         <div className="modal-head"><h2>More actions</h2><IconButton label="Close more actions" icon={<X size={18} />} onClick={() => setMoreOpen(false)} /></div>
         <div className="modal-body more-actions">
-          <IconButton label="Watch product tour" icon={<Video size={18} />} tag="Product tour · 1:09" onClick={() => { setMoreOpen(false); setDemoVideoOpen(true); }} />
+          <IconButton label="Watch technical demo" icon={<Video size={18} />} tag={`Technical demo · ${TECHNICAL_DEMO.duration}`} onClick={() => { setMoreOpen(false); setDemoVideoOpen(true); }} />
           <IconButton label={showGuide ? "Hide quick guide" : "Show quick guide"} icon={<HelpCircle size={18} />} tag="Quick guide" onClick={() => { setMoreOpen(false); setShowGuide((value) => !value); }} />
           <IconButton label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"} icon={theme === "light" ? <Moon size={18} /> : <Sun size={18} />} tag={theme === "light" ? "Dark theme" : "Light theme"} onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} />
         </div>
       </Dialog>
       {demoVideoOpen && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setDemoVideoOpen(false)}
-        >
-          <div
-            className="modal-card"
-            style={{ maxWidth: 1020 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="modal-header">
+        <Dialog open={demoVideoOpen} onClose={() => setDemoVideoOpen(false)} title="Stream and Triage technical walkthrough" maxWidth={1020}>
+            <div className="modal-head" style={{ flexWrap: "wrap", gap: 12 }}>
               <div>
                 <div className="section-kicker" style={{ marginBottom: 4 }}>
-                  Product Tour · Playwright 1080p Cut · Azure Neural TTS Narration
+                  Technical Demo · Recorded Azure Events · English Narration
                 </div>
                 <h3 style={{ fontSize: "var(--font-lg)", fontWeight: 700 }}>
-                  Microsoft-Decision-1 Showcase &amp; Live Benchmark (1:09)
+                  Stream &amp; Triage Walkthrough ({TECHNICAL_DEMO.duration})
                 </h3>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <a
-                  href="./demo-microsoft-decision-1.mp4"
-                  download="microsoft-decision-1-demo.mp4"
+                  href={TECHNICAL_DEMO.src}
+                  download="decision-1-stream-triage.mp4"
                   className="ghost"
                   style={{
                     textDecoration: "none",
@@ -738,21 +743,16 @@ export default function HomePage() {
                     color: "var(--text)",
                   }}
                 >
-                  Download MP4 (15 MB)
+                  Download MP4
                 </a>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => setDemoVideoOpen(false)}
-                >
-                  Close &times;
-                </button>
+                <IconButton label="Close technical demo" icon={<X size={18} />} onClick={() => setDemoVideoOpen(false)} />
               </div>
             </div>
-            <div className="modal-body" style={{ padding: 16 }}>
+            <div className="modal-body" style={{ padding: 16, maxHeight: "calc(100dvh - 200px)" }}>
               <video
                 ref={demoVideoRef}
-                src="./demo-microsoft-decision-1.mp4"
+                src={TECHNICAL_DEMO.src}
+                aria-label="Stream and Triage technical walkthrough"
                 controls
                 autoPlay
                 playsInline
@@ -763,7 +763,9 @@ export default function HomePage() {
                   background: "#0D0E0D",
                   display: "block",
                 }}
-              />
+              >
+                <track kind="captions" src={TECHNICAL_DEMO.captions} srcLang="en" label="English" default />
+              </video>
               <div
                 style={{
                   display: "flex",
@@ -783,14 +785,7 @@ export default function HomePage() {
                 >
                   CHAPTERS:
                 </span>
-                {[
-                  { label: "01 · System-1 Engine (0:00)", sec: 0 },
-                  { label: "02 · Live Benchmark & Cost (0:11)", sec: 11.0 },
-                  { label: "03 · 16 Industry Solutions (0:24)", sec: 24.2 },
-                  { label: "04 · Stream + Decide (0:36)", sec: 35.8 },
-                  { label: "05 · Triage at Scale (0:47)", sec: 47.0 },
-                  { label: "06 · Backend & Client Modes (0:57)", sec: 57.0 },
-                ].map((ch) => (
+                {TECHNICAL_DEMO.chapters.map((ch) => (
                   <button
                     key={ch.label}
                     type="button"
@@ -808,8 +803,7 @@ export default function HomePage() {
                 ))}
               </div>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
 
       {/* Footer */}

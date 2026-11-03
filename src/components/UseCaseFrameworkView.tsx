@@ -769,7 +769,7 @@ export function UseCaseFrameworkView({
                         marginBottom: 2,
                       }}
                     >
-                      Problem Solved (解决什么问题)
+                      Problem Solved
                     </div>
                     <div
                       style={{
@@ -792,7 +792,7 @@ export function UseCaseFrameworkView({
                         marginBottom: 2,
                       }}
                     >
-                      What It Proves (证明什么能力)
+                      What It Proves
                     </div>
                     <div
                       style={{
