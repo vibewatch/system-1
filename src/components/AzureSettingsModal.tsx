@@ -131,82 +131,68 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
   };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 9999,
-        background: "rgba(3, 7, 18, 0.78)",
-        backdropFilter: "blur(6px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-      }}
-      onClick={onClose}
-    >
+    <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="panel"
-        style={{
-          width: "100%",
-          maxWidth: 740,
-          maxHeight: "90vh",
-          overflowY: "auto",
-          border: "1px solid var(--accent-d1)",
-          boxShadow: "0 24px 64px rgba(0,0,0,0.65)",
-        }}
+        className="modal-window"
+        style={{ maxWidth: 680 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="panel-header">
+        <div className="modal-head">
           <div>
-            <div className="panel-title">
-              Azure AI Foundry &amp; Entra ID Configuration
+            <div style={{ fontWeight: 700, fontSize: 15 }}>
+              Connection &amp; Execution Mode
             </div>
-            <div className="panel-sub">
-              Default mode is Frontend-Only (Direct Browser to Your Azure
-              Foundry Endpoint with Entra ID). You can also switch to Backend
-              Server Mode.
+            <div
+              style={{
+                fontSize: 12.5,
+                color: "var(--text-muted)",
+                marginTop: 2,
+              }}
+            >
+              Default is Frontend + Backend Server Mode. Switch to Client-Only
+              Mode to connect your own Azure AI Foundry endpoint directly from
+              the browser.
             </div>
           </div>
-          <button type="button" className="btn" onClick={onClose}>
+          <button type="button" className="ghost" onClick={onClose}>
             Close &times;
           </button>
         </div>
 
         <div
-          className="panel-body"
-          style={{ display: "flex", flexDirection: "column", gap: 14 }}
+          className="modal-body"
+          style={{ display: "flex", flexDirection: "column", gap: 16 }}
         >
           {/* Execution Mode Selector */}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
+              gridTemplateColumns: draft.mode === "frontend" ? "1fr 1fr" : "1fr",
               gap: 12,
             }}
           >
             <CustomSelect
-              label="Execution Architecture Mode (Configurable)"
+              label="Execution Architecture Mode"
               value={draft.mode}
               onChange={(val) => update({ mode: val as ExecutionMode })}
               options={[
                 {
-                  value: "frontend",
+                  value: "backend",
                   label:
-                    "Frontend-Only Mode (Default — Direct Browser to User Azure Endpoint)",
+                    "Frontend + Backend Server Mode (Default — WebSocket + Server Entra ID)",
                   badge: "DEFAULT",
                   badgeTone: "d1",
                   description:
-                    "Runs 100% in the browser using your own Azure AI Foundry endpoint and Entra ID login.",
+                    "Uses the backend server's pre-authenticated Azure CLI / DefaultAzureCredential over real-time WebSocket.",
                 },
                 {
-                  value: "backend",
+                  value: "frontend",
                   label:
-                    "Backend Server Mode (Node WebSocket + Server Entra ID)",
-                  badge: "SERVER WS",
-                  badgeTone: "neutral",
+                    "Client-Only Mode (Direct Browser to Your Azure Foundry Endpoint)",
+                  badge: "CLIENT-ONLY",
+                  badgeTone: "info",
                   description:
-                    "Uses the server's pre-authenticated Azure CLI / DefaultAzureCredential over WebSocket.",
+                    "Runs 100% in the browser using your own Azure AI Foundry endpoint and Microsoft Entra ID login.",
                 },
               ]}
             />
@@ -433,7 +419,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                     </div>
                     <button
                       type="button"
-                      className="btn btn-primary"
+                      className="primary"
                       disabled={signingIn}
                       onClick={handleMsalLogin}
                     >
@@ -441,17 +427,6 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                         ? "Signing in..."
                         : "Sign in with Microsoft Entra ID"}
                     </button>
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: "0.72rem",
-                      color: "var(--text-secondary)",
-                    }}
-                  >
-                    Tip: You can also paste an Entra ID Bearer token directly
-                    below if your organization restricts third-party SPA client
-                    registrations.
                   </div>
                 </div>
               )}
@@ -505,24 +480,39 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
               </div>
             </>
           ) : (
-            <div className="q-editor-card">
+            <div
+              style={{
+                padding: 14,
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border)",
+                background: "var(--bg-input)",
+              }}
+            >
               <div
                 style={{
                   fontFamily: "var(--mono)",
                   fontSize: "0.74rem",
-                  color: "var(--accent-d1)",
+                  fontWeight: 700,
+                  color: "var(--primary)",
                   marginBottom: 4,
                 }}
               >
-                BACKEND SERVER MODE ACTIVE
+                FRONTEND + BACKEND SERVER MODE (DEFAULT)
               </div>
               <div
-                style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}
+                style={{
+                  fontSize: "0.78rem",
+                  color: "var(--text-muted)",
+                  lineHeight: 1.5,
+                }}
               >
                 All evaluations and streaming sessions route over WebSocket (
-                <code>/ws</code>) through the backend server using its logged-in
-                Microsoft Entra ID (<code>DefaultAzureCredential</code> /{" "}
-                <code>az cli</code>) and configured Azure AI Foundry endpoint.
+                <code>/ws</code>) and REST APIs through the backend server using
+                its pre-authenticated Microsoft Entra ID (
+                <code>DefaultAzureCredential</code> / <code>az cli</code>) and
+                configured Azure AI Foundry endpoint. Switch to{" "}
+                <b>Client-Only Mode</b> above anytime to run directly from the
+                browser against your own Azure endpoint.
               </div>
             </div>
           )}
@@ -533,14 +523,12 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                 padding: "9px 12px",
                 borderRadius: 6,
                 border: `1px solid ${
-                  statusMsg.ok
-                    ? "rgba(16, 185, 129, 0.4)"
-                    : "rgba(239, 68, 68, 0.4)"
+                  statusMsg.ok ? "var(--border-strong)" : "var(--danger)"
                 }`,
                 background: statusMsg.ok
-                  ? "var(--accent-d1-soft)"
-                  : "rgba(239, 68, 68, 0.1)",
-                color: statusMsg.ok ? "var(--accent-d1)" : "var(--danger)",
+                  ? "var(--primary-soft)"
+                  : "var(--danger-soft)",
+                color: statusMsg.ok ? "var(--primary)" : "var(--danger)",
                 fontFamily: "var(--mono)",
                 fontSize: "0.73rem",
               }}
@@ -555,37 +543,41 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
               justifyContent: "space-between",
               alignItems: "center",
               marginTop: 4,
+              paddingTop: 12,
+              borderTop: "1px solid var(--border-soft)",
             }}
           >
             <button
               type="button"
-              className="btn"
+              className="ghost"
               onClick={() => {
                 const next: AzureClientConfig = {
                   ...draft,
-                  mode: "backend",
+                  mode: draft.mode === "backend" ? "frontend" : "backend",
                 };
                 setDraft(next);
-                onSave(next);
-                onClose();
               }}
             >
-              Use Demo Backend Server Instead
+              {draft.mode === "backend"
+                ? "Switch to Client-Only Mode"
+                : "Reset to Default Backend Mode"}
             </button>
             <div style={{ display: "flex", gap: 8 }}>
+              {draft.mode === "frontend" && (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => {
+                    onSave(draft);
+                    onClose();
+                  }}
+                >
+                  Save Without Probe
+                </button>
+              )}
               <button
                 type="button"
-                className="btn"
-                onClick={() => {
-                  onSave(draft);
-                  onClose();
-                }}
-              >
-                Save Without Probe
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
+                className="primary"
                 disabled={testing}
                 onClick={handleTestAndSave}
               >
@@ -593,7 +585,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                   ? "Verifying Endpoint..."
                   : draft.mode === "frontend"
                   ? "Verify Endpoint & Save"
-                  : "Apply Backend Mode"}
+                  : "Apply Default Backend Mode"}
               </button>
             </div>
           </div>

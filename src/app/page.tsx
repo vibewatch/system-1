@@ -32,9 +32,10 @@ export interface WsIncomingMessage {
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<
-    "runtime" | "studio" | "triage" | "form" | "framework"
-  >("runtime");
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+    "studio" | "framework" | "runtime" | "triage" | "form"
+  >("studio");
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [showGuide, setShowGuide] = useState<boolean>(true);
 
   const [azureConfig, setAzureConfig] = useState<AzureClientConfig>(
     DEFAULT_AZURE_CONFIG
@@ -344,167 +345,222 @@ export default function HomePage() {
 
   return (
     <div className="app-shell">
-      {/* Topbar */}
+      {/* Architectural Single-Row Topbar */}
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark">S1</div>
+          <div className="brand-mark">M1</div>
           <div>
             <span className="brand-title">
-              FOUNDRY // SYSTEM-ONE
+              Microsoft-Decision-1
               <span className="model-vs-badges">
-                <span className="model-pill d1">Microsoft-Decision-1</span>
+                <span className="model-pill d1">System-1 Engine</span>
                 <span style={{ color: "var(--text-dim)" }}>vs</span>
                 <span className="model-pill terra">{comparisonModelLabel}</span>
               </span>
             </span>
             <span className="brand-sub">
-              {azureConfig.mode === "frontend"
-                ? "Frontend-Only Mode (Default) · Bring Your Own Azure Foundry Endpoint & Entra ID"
-                : "Backend Server Mode · Azure AI Foundry + Real-Time WebSocket"}
+              {azureConfig.mode === "backend"
+                ? "Frontend + Backend Server (Default) · Azure AI Foundry"
+                : "Client-Only Browser Mode · Custom Azure Endpoint & Entra ID"}
             </span>
           </div>
         </div>
 
-        <nav className="nav-tabs">
-          <button
-            className={`nav-tab ${activeTab === "runtime" ? "active" : ""}`}
-            onClick={() => setActiveTab("runtime")}
-          >
-            <span className="num">01</span> Stream + Decide
-          </button>
+        <nav className="nav-tabs" aria-label="Primary Workspaces">
           <button
             className={`nav-tab ${activeTab === "studio" ? "active" : ""}`}
             onClick={() => setActiveTab("studio")}
           >
-            <span className="num">02</span> Decision Studio
-          </button>
-          <button
-            className={`nav-tab ${activeTab === "triage" ? "active" : ""}`}
-            onClick={() => setActiveTab("triage")}
-          >
-            <span className="num">03</span> Triage at Scale
-          </button>
-          <button
-            className={`nav-tab ${activeTab === "form" ? "active" : ""}`}
-            onClick={() => setActiveTab("form")}
-          >
-            <span className="num">04</span> Agent Gate &amp; Form
+            <span className="num">01</span> Decision Workbench
           </button>
           <button
             className={`nav-tab ${activeTab === "framework" ? "active" : ""}`}
             onClick={() => setActiveTab("framework")}
           >
-            <span className="num">05</span> Solutions &amp; Benchmarks (
-            {allUseCases.length})
+            <span className="num">02</span> Industry Catalog ({allUseCases.length})
+          </button>
+          <button
+            className={`nav-tab ${activeTab === "runtime" ? "active" : ""}`}
+            onClick={() => setActiveTab("runtime")}
+          >
+            <span className="num">03</span> Stream + Decide
+          </button>
+          <button
+            className={`nav-tab ${activeTab === "triage" ? "active" : ""}`}
+            onClick={() => setActiveTab("triage")}
+          >
+            <span className="num">04</span> Triage at Scale
+          </button>
+          <button
+            className={`nav-tab ${activeTab === "form" ? "active" : ""}`}
+            onClick={() => setActiveTab("form")}
+          >
+            <span className="num">05</span> Claims Gate &amp; Form
           </button>
         </nav>
 
         <div className="topbar-right">
-          <div
-            className="pill"
-            onClick={() =>
-              azureConfig.mode === "frontend" && !isFrontendReady
-                ? setSettingsOpen(true)
-                : refreshHealth()
-            }
-            style={{ cursor: "pointer" }}
-            title="Click to check connection or configure Azure Foundry Endpoint & Entra ID"
-          >
-            <span className={`dot ${effectiveReady && health?.ok ? "ok" : "bad"}`} />
-            <span>
-              {azureConfig.mode === "frontend"
-                ? isFrontendReady
-                  ? health?.ok
-                    ? `FRONTEND DIRECT · D1 ${health.decision_latency_ms}ms`
-                    : "FRONTEND DIRECT · Click to Verify"
-                  : "FRONTEND MODE · Setup Azure Endpoint"
-                : wsConnected
-                ? health?.ok
-                  ? `BACKEND WS · D1 ${health.decision_latency_ms}ms`
-                  : "BACKEND WS · Checking Foundry…"
-                : "WS RECONNECTING"}
-            </span>
-          </div>
-
           <button
-            className="btn btn-primary"
-            style={{ padding: "6px 12px", fontSize: "0.74rem" }}
-            onClick={() => setSettingsOpen(true)}
+            type="button"
+            className="ghost"
+            onClick={() => setShowGuide((g) => !g)}
+            style={{
+              borderColor: showGuide ? "var(--primary)" : "var(--border)",
+              color: showGuide ? "var(--primary)" : "var(--text)",
+            }}
           >
-            ⚙ Azure Endpoint &amp; Entra ID
+            {showGuide ? "Hide Guide" : "? Quick Guide"}
           </button>
 
           <button
-            className="ghost"
-            onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            type="button"
+            className="pill"
+            onClick={() => setSettingsOpen(true)}
+            style={{ cursor: "pointer" }}
+            title="Configure Execution Mode (Backend Server vs Client-Only Browser) and Azure AI Foundry Credentials"
           >
-            {theme === "dark" ? "☀ Daylight" : "☾ Obsidian"}
+            <span
+              className={`dot ${
+                effectiveReady && (health?.ok ?? true) ? "ok" : "warn"
+              }`}
+            />
+            <span>
+              {azureConfig.mode === "backend"
+                ? wsConnected
+                  ? health?.decision_latency_ms
+                    ? `Backend Mode · ${health.decision_latency_ms}ms`
+                    : "Backend Mode · Connected"
+                  : "Backend Mode · Connecting…"
+                : isFrontendReady
+                ? "Client-Only Mode · Ready"
+                : "Client-Only · Setup Endpoint"}
+            </span>
+            <span style={{ color: "var(--text-dim)", marginLeft: 2 }}>⚙</span>
+          </button>
+
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+            title="Switch between Editorial Paper (Light) and Matte Graphite (Dark)"
+          >
+            {theme === "light" ? "Graphite" : "Paper"}
           </button>
         </div>
       </header>
 
-      {/* Frontend-Only Mode Onboarding Banner when user hasn't entered endpoint/token yet */}
-      {azureConfig.mode === "frontend" && !isFrontendReady && (
-        <div
-          style={{
-            margin: "0 0 14px 0",
-            padding: "12px 16px",
-            borderRadius: 10,
-            background: "rgba(16, 185, 129, 0.08)",
-            border: "1px solid rgba(16, 185, 129, 0.35)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 12,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontFamily: "var(--mono)",
-                fontSize: "0.76rem",
-                fontWeight: 700,
-                color: "var(--accent-d1)",
-              }}
-            >
-              FRONTEND-ONLY MODE ACTIVE (DEFAULT) — CONNECT YOUR AZURE AI FOUNDRY
-              DEPLOYMENT
+      {/* Collapsible 3-Step User Guide & Architecture Overview */}
+      {showGuide && (
+        <section className="guide-strip" aria-label="How to use this showcase">
+          <div className="guide-strip-inner">
+            <div>
+              <span className="guide-step-num">Why Microsoft-Decision-1?</span>
+              <div className="guide-step-title">
+                Deterministic System-1 Decisions in One Forward Pass
+              </div>
+              <p className="guide-step-desc">
+                Evaluates structured questions (<b>Noul</b> yes/no,{" "}
+                <b>Choice</b> routing, <b>Score</b> rubrics) in ~260ms with
+                calibrated probabilities and <b>$0 output token cost</b>.
+              </p>
             </div>
-            <div
-              style={{
-                fontSize: "0.78rem",
-                color: "var(--text-secondary)",
-                marginTop: 2,
-              }}
-            >
-              Sign in with <b>Microsoft Entra ID</b> (OAuth2 PKCE or Bearer
-              token) and configure your Azure AI Foundry endpoint &amp;{" "}
-              <code>Microsoft-Decision-1</code> deployment to run 100% in the
-              browser — or switch to Backend Server Mode to use the server&apos;s
-              pre-authenticated Azure CLI session.
+
+            <div className="guide-step">
+              <span className="guide-step-num">Step 01 · Select Scenario</span>
+              <div className="guide-step-title">
+                Read the Problem &amp; Proof Brief
+              </div>
+              <p className="guide-step-desc">
+                Pick any of the 16 enterprise scenarios on the left to see what
+                business bottleneck it solves and what capability of{" "}
+                <b>Microsoft-Decision-1</b> it proves.
+              </p>
+            </div>
+
+            <div className="guide-step">
+              <span className="guide-step-num">Step 02 · Switch Test Cases</span>
+              <div className="guide-step-title">
+                Test Violation vs. Compliant Inputs
+              </div>
+              <p className="guide-step-desc">
+                Toggle between <b>Case 1 (Violation / High-Risk)</b> and{" "}
+                <b>Case 2 (Compliant / Safe Pass)</b> and click{" "}
+                <b>Run Evaluation</b> to compare live against{" "}
+                <code>{comparisonModelLabel}</code>.
+              </p>
+            </div>
+
+            <div className="guide-step">
+              <span className="guide-step-num">Step 03 · Inspect Proof</span>
+              <div className="guide-step-title">
+                Verify Speed, Accuracy &amp; Cost
+              </div>
+              <p className="guide-step-desc">
+                Review the 3-pillar proof scoreboard (latency speedup,
+                ground-truth accuracy, and cost per 1,000 calls) or switch to{" "}
+                <b>Client-Only Mode</b> via the top-right{" "}
+                <b>Backend Mode ⚙</b> menu.
+              </p>
+            </div>
+
+            <div>
+              <button
+                type="button"
+                className="ghost"
+                style={{ padding: "4px 8px", fontSize: 11.5 }}
+                onClick={() => setShowGuide(false)}
+                title="Dismiss guide"
+              >
+                Dismiss &times;
+              </button>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setSettingsOpen(true)}
-            >
-              Configure Azure Endpoint &amp; Entra ID
-            </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() =>
-                handleUpdateAzureConfig({
-                  ...azureConfig,
-                  mode: "backend",
-                })
-              }
-            >
-              Switch to Backend Server Mode
-            </button>
+        </section>
+      )}
+
+      {/* Compact notice only if user manually switched to Client-Only mode without configuring endpoint yet */}
+      {azureConfig.mode === "frontend" && !isFrontendReady && (
+        <div className="guide-strip">
+          <div
+            style={{
+              padding: "10px 16px",
+              borderRadius: "var(--radius-sm)",
+              background: "var(--amber-soft)",
+              border: "1px solid var(--amber)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 12,
+              fontSize: 12.5,
+            }}
+          >
+            <span>
+              <b>Client-Only Mode Selected:</b> Enter your Azure AI Foundry
+              endpoint and Microsoft Entra ID credentials to run directly in the
+              browser, or switch back to the default Backend Server Mode.
+            </span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => setSettingsOpen(true)}
+              >
+                Configure Client Endpoint
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() =>
+                  handleUpdateAzureConfig({
+                    ...azureConfig,
+                    mode: "backend",
+                  })
+                }
+              >
+                Use Default Backend Mode
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -576,16 +632,16 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="footer">
         <span>
-          Mode:{" "}
+          Execution Mode:{" "}
           <b>
-            {azureConfig.mode === "frontend"
-              ? "Frontend-Only Browser Direct (Default)"
-              : "Backend Server WebSocket"}
+            {azureConfig.mode === "backend"
+              ? "Frontend + Backend Server (Default)"
+              : "Client-Only Browser Direct"}
           </b>{" "}
           · Endpoint:{" "}
           <b>
             {azureConfig.mode === "frontend"
-              ? azureConfig.endpoint || "(Configure in Azure Settings)"
+              ? azureConfig.endpoint || "(Configure in Connection Settings)"
               : health?.endpoint ||
                 "https://icsuaaisea.cognitiveservices.azure.com"}
           </b>{" "}
@@ -600,7 +656,7 @@ export default function HomePage() {
               : health?.decisionDeployment || "Decision-1"}
             )
           </b>{" "}
-          vs <b>{comparisonModelLabel}</b> · Events: <b>{wsEventCount}</b>
+          vs <b>{comparisonModelLabel}</b> · Pricing: <b>$0.042/1M input · $0 output</b>
         </span>
       </footer>
     </div>

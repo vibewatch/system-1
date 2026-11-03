@@ -8,6 +8,7 @@ import {
   QuestionType,
   computeCorrectnessSummary,
   computeUseCaseEconomics,
+  getScenarioNarrative,
 } from "@/lib/demo-data";
 import type { DecisionRunResult } from "@/lib/foundry";
 import { CustomSelect } from "./CustomSelect";
@@ -54,7 +55,7 @@ export default function StudioCompareView({
   subscribeWs,
   wsConnected,
   comparisonModelName = "gpt-6.1-terra",
-  endpointUrl = "https://<your-foundry-resource>.cognitiveservices.azure.com",
+  endpointUrl = "https://icsuaaisea.cognitiveservices.azure.com",
   allUseCases,
   externalSample,
   externalTrigger,
@@ -64,20 +65,31 @@ export default function StudioCompareView({
     allUseCases && allUseCases.length > 0 ? allUseCases : STUDIO_SAMPLES;
   const [sampleId, setSampleId] = useState(samples[0].id);
   const [activeCaseIndex, setActiveCaseIndex] = useState(0);
-  const [stateText, setStateText] = useState(samples[0].content);
+  const [sidebarSearch, setSidebarSearch] = useState("");
+  const [stateText, setStateText] = useState(
+    samples[0].testCases?.[0]?.content || samples[0].content
+  );
   const [questions, setQuestions] = useState<DecisionQuestion[]>(() => [
     ...samples[0].questions,
   ]);
+  const [schemaModalOpen, setSchemaModalOpen] = useState(false);
+
   const activeSample = samples.find((s) => s.id === sampleId) || samples[0];
   const activeTestCase =
     activeSample.testCases && activeSample.testCases[activeCaseIndex]
       ? activeSample.testCases[activeCaseIndex]
       : undefined;
   const activeExpected = activeTestCase?.expected || activeSample.expected;
+  const activeVerdict =
+    activeTestCase?.expectedGateVerdict || activeSample.expectedGateVerdict;
+  const narrative = useMemo(
+    () => getScenarioNarrative(activeSample),
+    [activeSample]
+  );
 
   const [outTab, setOutTab] = useState<
-    "visual" | "correctness" | "probs" | "json" | "curl"
-  >("visual");
+    "table" | "visual" | "probs" | "api"
+  >("table");
   const [racing, setRacing] = useState(false);
   const [d1Result, setD1Result] = useState<DecisionRunResult | null>(null);
   const [terraResult, setTerraResult] = useState<DecisionRunResult | null>(
@@ -111,8 +123,10 @@ export default function StudioCompareView({
   useEffect(() => {
     if (wsConnected && !didInitialRun) {
       setDidInitialRun(true);
+      const firstContent =
+        STUDIO_SAMPLES[0].testCases?.[0]?.content || STUDIO_SAMPLES[0].content;
       sendWs("run_compare", {
-        state: STUDIO_SAMPLES[0].content,
+        state: firstContent,
         questions: STUDIO_SAMPLES[0].questions,
         mode: "compare",
       });
@@ -224,6 +238,25 @@ export default function StudioCompareView({
     setNewCriteriaText("");
   };
 
+  // Group scenarios by industry for the left sidebar
+  const groupedScenarios = useMemo(() => {
+    const q = sidebarSearch.trim().toLowerCase();
+    const filtered = samples.filter(
+      (s) =>
+        !q ||
+        s.label.toLowerCase().includes(q) ||
+        (s.industry || "").toLowerCase().includes(q) ||
+        s.category.toLowerCase().includes(q)
+    );
+    const groups = new Map<string, StudioSample[]>();
+    for (const s of filtered) {
+      const ind = s.industry || "Enterprise Core";
+      if (!groups.has(ind)) groups.set(ind, []);
+      groups.get(ind)!.push(s);
+    }
+    return Array.from(groups.entries());
+  }, [samples, sidebarSearch]);
+
   const d1Ms = d1Result?.latency_ms || 0;
   const terraMs = terraResult?.latency_ms || 0;
   const maxMs = Math.max(d1Ms, terraMs, 1);
@@ -281,698 +314,666 @@ export default function StudioCompareView({
   const systemOnePayload = buildClientSystemOnePayload(stateText, questions);
 
   const curlSnippet = `curl --request POST \\
-  --url "https://icsuaaisea.cognitiveservices.azure.com/providers/microsoft/v1/systemone" \\
+  --url "${endpointUrl}/providers/microsoft/v1/systemone" \\
   --header "Authorization: Bearer $(az account get-access-token --resource https://cognitiveservices.azure.com --query accessToken -o tsv)" \\
   --header "Content-Type: application/json" \\
   --data '${JSON.stringify(systemOnePayload, null, 2).replace(/'/g, "'\\''")}'`;
 
   return (
-    <>
-      <section className="hero-banner">
-        <div>
-          <p className="eyebrow">
-            02 · HEAD-TO-HEAD DECISION STUDIO · SYSTEMONE VS RESPONSES API
-          </p>
-          <h1>
-            Same document, same typed questions — <strong>raced live.</strong>
-          </h1>
-        </div>
-        <p className="hero-copy">
-          Compare <b>Microsoft-Decision-1</b> (calibrated <code>noul</code>,{" "}
-          <code>choice</code>, and <code>score</code> logprob distributions in
-          one pass) against <b>{comparisonModelName}</b> structured output with{" "}
-          <b>ground-truth correctness verification</b> across{" "}
-          <b>{samples.length}</b> enterprise solutions.
-        </p>
-      </section>
-
-      <main className="layout split-5-7">
-        {/* Left: Input State & Typed Questions */}
-        <section className="card">
-          <div className="card-head" style={{ flexWrap: "wrap", gap: 10 }}>
-            <span className="eyebrow">01 · SOLUTION &amp; TEST CASE SELECTOR</span>
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                flex: 1,
-                justifyContent: "flex-end",
-              }}
-            >
-              <div style={{ minWidth: 320, maxWidth: 440, flex: 1 }}>
-                <CustomSelect
-                  value={sampleId}
-                  onChange={(val) => selectSample(val)}
-                  options={samples.map((s) => ({
-                    value: s.id,
-                    label: s.label,
-                    category: `${s.industry || "Cross-Industry"} · ${
-                      s.category
-                    }`,
-                    description: s.description,
-                    badge:
-                      s.origin === "industry"
-                        ? "INDUSTRY"
-                        : s.origin === "custom"
-                        ? "CUSTOM"
-                        : "CORE",
-                    badgeTone:
-                      s.origin === "industry"
-                        ? "d1"
-                        : s.origin === "custom"
-                        ? "custom"
-                        : "neutral",
-                  }))}
-                />
-              </div>
-              {onOpenFramework && (
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={onOpenFramework}
-                  title="Browse Industry Solutions, run multi-case correctness benchmarks, or create your own solution"
-                >
-                  + Solution Hub ({samples.length})
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Multi-Case Ground-Truth Selector Pills */}
-          {activeSample.testCases && activeSample.testCases.length > 0 && (
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-                alignItems: "center",
-                marginBottom: 10,
-                padding: "8px 10px",
-                borderRadius: 8,
-                background: "var(--bg-input)",
-                border: "1px solid var(--border-soft)",
-              }}
-            >
-              <span
+    <main className="layout single">
+      <div className="wb-shell">
+        {/* LEFT SIDEBAR: Scenario Navigator */}
+        <aside className="wb-sidebar" aria-label="Scenario Navigator">
+          <div className="wb-sidebar-head">
+            <div>
+              <div
                 style={{
-                  fontFamily: "var(--mono)",
-                  fontSize: "0.68rem",
-                  color: "var(--text-muted)",
+                  font: "700 11px var(--mono)",
+                  letterSpacing: "0.08em",
                   textTransform: "uppercase",
                 }}
               >
-                Ground-Truth Test Cases:
-              </span>
-              {activeSample.testCases.map((tc, idx) => (
-                <button
-                  key={tc.id}
-                  type="button"
-                  className={`industry-pill ${
-                    activeCaseIndex === idx ? "active" : ""
-                  }`}
-                  onClick={() => selectTestCase(idx)}
-                >
-                  {tc.title}
-                </button>
-              ))}
-              {activeTestCase?.expectedGateVerdict && (
-                <span
-                  style={{
-                    marginLeft: "auto",
-                    fontFamily: "var(--mono)",
-                    fontSize: "0.68rem",
-                    color: "var(--accent-d1)",
-                  }}
-                >
-                  Expected Verdict: <b>{activeTestCase.expectedGateVerdict}</b>
-                </span>
-              )}
+                Scenarios ({samples.length})
+              </div>
+              <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
+                Select an enterprise use case
+              </div>
             </div>
-          )}
-
-          {activeSample?.codeRule && (
-            <div className="uc-code-rule" style={{ marginBottom: 10 }}>
-              <span style={{ color: "var(--text-muted)" }}>
-                // Deterministic Gate ({activeSample.industry || activeSample.category}):{" "}
-              </span>
-              {activeSample.codeRule}
-            </div>
-          )}
-
-          <textarea
-            value={stateText}
-            onChange={(e) => setStateText(e.target.value)}
-            placeholder="Paste any customer ticket, contract clause, call transcript, or incident report..."
-          />
+            {onOpenFramework && (
+              <button
+                type="button"
+                className="ghost"
+                style={{ padding: "4px 8px", fontSize: 11 }}
+                onClick={onOpenFramework}
+                title="Open Industry Catalog & Custom Scenario Builder"
+              >
+                Catalog / +New
+              </button>
+            )}
+          </div>
 
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              font: "500 11px var(--mono)",
-              color: "var(--text-muted)",
-              marginTop: 6,
+              padding: "8px 10px",
+              borderBottom: "1px solid var(--border-soft)",
             }}
           >
-            <span>
-              {stateText.trim() ? stateText.trim().split(/\s+/).length : 0} words
-              · {stateText.length} chars
-            </span>
-            <span>Sent as `state` to `/providers/microsoft/v1/systemone`</span>
+            <input
+              type="text"
+              placeholder="Filter scenarios or industry…"
+              value={sidebarSearch}
+              onChange={(e) => setSidebarSearch(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 9px",
+                fontSize: 12,
+              }}
+            />
           </div>
 
-          <div className="card-head sub">
-            <span className="eyebrow">
-              02 · TYPED QUESTIONS ({questions.length})
-            </span>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {questions.map((q) => (
-              <div
-                key={q.id}
-                style={{
-                  background: "var(--bg-input)",
-                  border: "1px solid var(--border-soft)",
-                  borderRadius: 8,
-                  padding: "8px 12px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 10,
-                  alignItems: "flex-start",
-                }}
-              >
-                <div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <b style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
-                      {q.id}
-                    </b>
-                    <span className="badge">{q.type}</span>
-                    <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
-                      ({q.label})
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      color: "var(--text-muted)",
-                      fontSize: 12.5,
-                      marginTop: 2,
-                    }}
-                  >
-                    {q.instructions}
-                  </div>
-                  {q.criteria && (
-                    <div
-                      style={{
-                        font: "500 10.5px var(--mono)",
-                        color: "var(--cyan)",
-                        marginTop: 3,
-                      }}
+          <div className="wb-sidebar-list">
+            {groupedScenarios.map(([industry, list]) => (
+              <div key={industry}>
+                <div className="wb-industry-group-label">{industry}</div>
+                {list.map((s) => {
+                  const isActive = s.id === activeSample.id;
+                  const shortTitle = s.label.includes("·")
+                    ? s.label.split("·").slice(1).join("·").trim()
+                    : s.label;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className={`wb-nav-item ${isActive ? "active" : ""}`}
+                      onClick={() => selectSample(s.id)}
                     >
-                      {Array.isArray(q.criteria)
-                        ? `scale: [${q.criteria.join(" → ")}]`
-                        : `choices: {${Object.keys(q.criteria).join(", ")}}`}
-                    </div>
-                  )}
-                </div>
-                <button
-                  className="ghost"
-                  onClick={() => removeQuestion(q.id)}
-                  style={{ padding: "2px 8px", fontSize: 11 }}
-                >
-                  ×
-                </button>
+                      <span className="wb-nav-item-title">{shortTitle}</span>
+                      <span className="wb-nav-item-meta">
+                        <span>{s.category}</span>
+                        <span>{s.questions.length}Q</span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             ))}
           </div>
+        </aside>
 
-          {/* Add custom typed question */}
-          <div
-            style={{
-              marginTop: 12,
-              padding: 12,
-              borderRadius: 8,
-              border: "1px dashed var(--border)",
-              background: "var(--bg-input)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-            }}
-          >
-            <span className="eyebrow">ADD TYPED QUESTION</span>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                type="text"
-                placeholder="question_id (e.g. sla_breach)"
-                value={newKey}
-                onChange={(e) => setNewKey(e.target.value)}
-                style={{ flex: 1 }}
-              />
-              <div style={{ minWidth: 225 }}>
-                <CustomSelect
-                  size="sm"
-                  value={newType}
-                  onChange={(val) => setNewType(val as QuestionType)}
-                  options={[
-                    {
-                      value: "noul",
-                      label: "noul (Yes/No prob)",
-                      badge: "NOUL",
-                      badgeTone: "d1",
-                    },
-                    {
-                      value: "choice",
-                      label: "choice (Categorize)",
-                      badge: "CHOICE",
-                      badgeTone: "info",
-                    },
-                    {
-                      value: "score",
-                      label: "score (0..N scale)",
-                      badge: "SCORE",
-                      badgeTone: "neutral",
-                    },
-                  ]}
-                />
+        {/* RIGHT MAIN STAGE: Clear 3-Tier Visual Hierarchy */}
+        <div className="wb-main">
+          {/* TIER 1: Scenario Brief (What Problem It Solves & What It Proves) + Test Case Input */}
+          <section className="wb-brief-card">
+            <div className="wb-brief-top">
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 4,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span
+                    style={{
+                      font: "600 10.5px var(--mono)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      color: "var(--primary)",
+                    }}
+                  >
+                    {activeSample.industry || "Enterprise"} ·{" "}
+                    {activeSample.category}
+                  </span>
+                  {activeVerdict && (
+                    <span
+                      style={{
+                        font: "600 10px var(--mono)",
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                        background:
+                          activeTestCase?.scenarioType === "violation"
+                            ? "var(--danger-soft)"
+                            : "var(--primary-soft)",
+                        color:
+                          activeTestCase?.scenarioType === "violation"
+                            ? "var(--danger)"
+                            : "var(--primary)",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      Expected Verdict: {activeVerdict}
+                    </span>
+                  )}
+                </div>
+                <h1
+                  style={{
+                    margin: 0,
+                    fontSize: "clamp(18px, 1.8vw, 23px)",
+                    fontWeight: 700,
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  {activeSample.label}
+                </h1>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setSchemaModalOpen(true)}
+                >
+                  Customize Input &amp; Questions ({questions.length})
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={runComparison}
+                  disabled={racing || !wsConnected}
+                >
+                  {racing
+                    ? "Evaluating Live…"
+                    : `Run Live Evaluation`}
+                </button>
               </div>
             </div>
-            <input
-              type="text"
-              placeholder="Instructions (e.g. Does this require immediate SLA escalation?)"
-              value={newInst}
-              onChange={(e) => setNewInst(e.target.value)}
-            />
-            {newType !== "noul" && (
-              <input
-                type="text"
-                placeholder={
-                  newType === "choice"
-                    ? "Comma-separated options (e.g. billing, engineering, security)"
-                    : "Comma-separated scale low to high (e.g. low, medium, high, critical)"
-                }
-                value={newCriteriaText}
-                onChange={(e) => setNewCriteriaText(e.target.value)}
-              />
-            )}
-            <button
-              className="ghost"
-              onClick={addQuestion}
-              style={{ alignSelf: "flex-start" }}
-            >
-              + Add Question to Payload
-            </button>
-          </div>
 
-          <div
-            style={{
-              marginTop: 16,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-            }}
-          >
-            <span
-              style={{
-                font: "500 11px var(--mono)",
-                color: "var(--text-muted)",
-              }}
-            >
-              WebSocket realtime race
-            </span>
-            <button
-              className="primary"
-              onClick={runComparison}
-              disabled={racing || !wsConnected}
-            >
-              {racing
-                ? "Racing Models over WebSocket…"
-                : "⚡ Race Decision-1 vs gpt-6.1-terra"}
-            </button>
-          </div>
-        </section>
-
-        {/* Right: Live Comparison Results */}
-        <section className="card">
-          <div className="card-head">
-            <span className="eyebrow">03 · HEAD-TO-HEAD TELEMETRY & OUTPUT</span>
-            <div className="nav-tabs">
-              <button
-                className={`nav-tab ${outTab === "visual" ? "active" : ""}`}
-                onClick={() => setOutTab("visual")}
-              >
-                Visual Compare
-              </button>
-              <button
-                className={`nav-tab ${
-                  outTab === "correctness" ? "active" : ""
-                }`}
-                onClick={() => setOutTab("correctness")}
-              >
-                Correctness Matrix
-              </button>
-              <button
-                className={`nav-tab ${outTab === "probs" ? "active" : ""}`}
-                onClick={() => setOutTab("probs")}
-              >
-                Probabilities
-              </button>
-              <button
-                className={`nav-tab ${outTab === "json" ? "active" : ""}`}
-                onClick={() => setOutTab("json")}
-              >
-                Raw JSON
-              </button>
-              <button
-                className={`nav-tab ${outTab === "curl" ? "active" : ""}`}
-                onClick={() => setOutTab("curl")}
-              >
-                API & cURL
-              </button>
-            </div>
-          </div>
-
-          {/* Race summary box */}
-          <div className="compare-summary">
-            <div className="race">
-              <span className="lbl d1">Microsoft-Decision-1</span>
-              <span className="track">
-                <i
-                  className="bar d1"
-                  style={{
-                    width: d1Ms
-                      ? `${Math.max(6, (d1Ms / maxMs) * 100)}%`
-                      : "0%",
-                  }}
-                />
-              </span>
-              <span className="val">
-                {d1Ms ? `${d1Ms} ms` : racing ? "running…" : "—"}
-                <small>
-                  {d1Result?.usage
-                    ? `${
-                        d1Result.usage.input_tokens +
-                        d1Result.usage.output_tokens
-                      } tok`
-                    : "systemone"}
-                </small>
-              </span>
-
-              <span className="lbl terra">gpt-6.1-terra</span>
-              <span className="track">
-                <i
-                  className="bar terra"
-                  style={{
-                    width: terraMs
-                      ? `${Math.max(6, (terraMs / maxMs) * 100)}%`
-                      : "0%",
-                  }}
-                />
-              </span>
-              <span className="val">
-                {terraMs ? `${terraMs} ms` : racing ? "running…" : "—"}
-                <small>
-                  {terraResult?.usage
-                    ? `${
-                        terraResult.usage.input_tokens +
-                        terraResult.usage.output_tokens
-                      } tok`
-                    : "responses api"}
-                </small>
-              </span>
+            {/* 2-Column Editorial Explanation: Problem Solved vs What It Proves */}
+            <div className="wb-purpose-grid">
+              <div className="wb-purpose-cell">
+                <div
+                  className="wb-purpose-kicker"
+                  style={{ color: "var(--terra)" }}
+                >
+                  <span>01 · Business Problem Solved (解决什么业务问题)</span>
+                </div>
+                <p className="wb-purpose-body">{narrative.problemSolved}</p>
+              </div>
+              <div className="wb-purpose-cell">
+                <div
+                  className="wb-purpose-kicker"
+                  style={{ color: "var(--primary)" }}
+                >
+                  <span>
+                    02 · What This Proves About Microsoft-Decision-1 (证明什么能力)
+                  </span>
+                </div>
+                <p className="wb-purpose-body">{narrative.whatItProves}</p>
+              </div>
             </div>
 
-            <div className="speedup">
-              <span className="x">{speedup ? `${speedup}×` : "—"}</span>
-              <span className="x-label">
-                {speedup
-                  ? "Decision-1 latency speedup"
-                  : "Run race to measure"}
-              </span>
-            </div>
-
-            <div className="compare-agree" style={{ flexWrap: "wrap", gap: 10 }}>
-              <span>
-                Decision-1 Ground-Truth Correctness:{" "}
-                <b style={{ color: "var(--primary-bright)" }}>
-                  {d1Result && correctnessSummary.totalQuestions > 0
-                    ? `${correctnessSummary.d1Correct}/${correctnessSummary.totalQuestions} (${correctnessSummary.d1AccuracyPct}%)`
-                    : "—"}
-                </b>
-              </span>
-              <span>
-                {comparisonModelName} Correctness:{" "}
-                <b style={{ color: "var(--terra-bright)" }}>
-                  {terraResult && correctnessSummary.totalQuestions > 0
-                    ? `${correctnessSummary.terraCorrect}/${correctnessSummary.totalQuestions} (${correctnessSummary.terraAccuracyPct}%)`
-                    : "—"}
-                </b>
-              </span>
-              <span>
-                Model Agreement:{" "}
-                <b>
-                  {comparedCount > 0
-                    ? `${agreedCount}/${comparedCount} (${Math.round(
-                        (agreedCount / comparedCount) * 100
-                      )}%)`
-                    : "waiting…"}
-                </b>
-              </span>
-            </div>
-
-            <div
-              className="compare-agree"
-              style={{
-                flexWrap: "wrap",
-                gap: 10,
-                borderTop: "1px dashed var(--border-soft)",
-                paddingTop: 8,
-                marginTop: 4,
-              }}
-            >
-              <span>
-                Decision-1 Cost ($0.042/1M in, $0 out):{" "}
-                <b style={{ color: "var(--primary-bright)" }}>
-                  ${economicsSummary.d1CostPer1kUsd.toFixed(4)} / 1k calls
-                </b>
-              </span>
-              <span>
-                {comparisonModelName} Cost:{" "}
-                <b style={{ color: "var(--terra-bright)" }}>
-                  ${economicsSummary.terraCostPer1kUsd.toFixed(3)} / 1k calls
-                </b>
-              </span>
-              <span style={{ color: "var(--accent-d1)" }}>
-                Cost Savings:{" "}
-                <b>
-                  {economicsSummary.costMultiplier}&times; cheaper (
-                  {economicsSummary.savingsPct}% saved · $
-                  {economicsSummary.monthlySavingsUsd.toLocaleString("en-US", {
-                    maximumFractionDigits: 0,
-                  })}
-                  /mo @ {(economicsSummary.dailyVolume / 1000).toFixed(0)}k/day)
-                </b>
-              </span>
-            </div>
-          </div>
-
-          {outTab === "correctness" && (
-            <div className="panel" style={{ padding: 14 }}>
+            {/* Test Case Selector + Clean Read-First Document View */}
+            <div className="wb-input-section">
               <div
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  marginBottom: 12,
                   flexWrap: "wrap",
-                  gap: 8,
+                  gap: 10,
+                  marginBottom: 10,
                 }}
               >
-                <div>
-                  <b style={{ fontFamily: "var(--mono)", fontSize: "0.8rem" }}>
-                    GROUND-TRUTH CORRECTNESS &amp; CALIBRATION MATRIX
-                  </b>
-                  <div
+                <div className="wb-case-tabs">
+                  <span
                     style={{
-                      fontSize: "0.73rem",
+                      font: "600 10.5px var(--mono)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
                       color: "var(--text-muted)",
-                      marginTop: 2,
+                      marginRight: 4,
                     }}
                   >
-                    Verifies both models against expected reference answers for{" "}
-                    <b>{activeTestCase?.title || activeSample.label}</b>
-                  </div>
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 12,
-                    fontFamily: "var(--mono)",
-                    fontSize: "0.74rem",
-                  }}
-                >
-                  <span>
-                    D1 Accuracy:{" "}
-                    <b style={{ color: "var(--primary-bright)" }}>
-                      {correctnessSummary.d1AccuracyPct}%
-                    </b>{" "}
-                    (Avg Conf: {correctnessSummary.d1AvgConfidencePct}%)
+                    Benchmark Test Case:
                   </span>
-                  <span>
-                    {comparisonModelName}:{" "}
-                    <b style={{ color: "var(--terra-bright)" }}>
-                      {correctnessSummary.terraAccuracyPct}%
-                    </b>
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ overflowX: "auto" }}>
-                <table
-                  style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    fontFamily: "var(--mono)",
-                    fontSize: "0.74rem",
-                  }}
-                >
-                  <thead>
-                    <tr
+                  {activeSample.testCases &&
+                  activeSample.testCases.length > 0 ? (
+                    activeSample.testCases.map((tc, idx) => {
+                      const active = activeCaseIndex === idx;
+                      const isViolation = tc.scenarioType === "violation";
+                      return (
+                        <button
+                          key={tc.id}
+                          type="button"
+                          className={`wb-case-tab ${active ? "active" : ""}`}
+                          onClick={() => selectTestCase(idx)}
+                        >
+                          <span
+                            className="dot"
+                            style={{
+                              background: isViolation
+                                ? "var(--danger)"
+                                : "var(--primary)",
+                            }}
+                          />
+                          <span>{tc.title}</span>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <span
                       style={{
-                        borderBottom: "1px solid var(--border)",
-                        textAlign: "left",
+                        fontSize: 12,
                         color: "var(--text-muted)",
                       }}
                     >
-                      <th style={{ padding: "8px 6px" }}>Question</th>
-                      <th style={{ padding: "8px 6px" }}>Type</th>
-                      <th style={{ padding: "8px 6px" }}>
-                        Expected Ground Truth
-                      </th>
-                      <th style={{ padding: "8px 6px" }}>
-                        Microsoft-Decision-1
-                      </th>
-                      <th style={{ padding: "8px 6px" }}>
-                        {comparisonModelName}
-                      </th>
-                      <th style={{ padding: "8px 6px" }}>Models Agree?</th>
+                      Default Input Document
+                    </span>
+                  )}
+                </div>
+
+                <span
+                  style={{
+                    font: "500 11px var(--mono)",
+                    color: "var(--text-dim)",
+                  }}
+                >
+                  {questions.filter((q) => q.type === "noul").length} noul ·{" "}
+                  {questions.filter((q) => q.type === "choice").length} choice ·{" "}
+                  {questions.filter((q) => q.type === "score").length} score
+                </span>
+              </div>
+
+              <div
+                style={{
+                  background: "var(--bg-input)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "12px 14px",
+                  font: "12.5px/1.6 var(--mono)",
+                  color: "var(--text)",
+                  whiteSpace: "pre-wrap",
+                  maxHeight: 155,
+                  overflowY: "auto",
+                }}
+              >
+                {stateText}
+              </div>
+            </div>
+          </section>
+
+          {/* TIER 2: 3-Pillar Executive Proof Scoreboard (Speed, Correctness, Economics) */}
+          <section
+            className="wb-proof-strip"
+            aria-label="Executive Proof Metrics"
+          >
+            {/* Pillar 1: Latency */}
+            <div className="wb-proof-cell">
+              <div className="wb-proof-label">
+                <span>01 · Latency Speedup</span>
+                <span>Single Forward Pass</span>
+              </div>
+              <div className="wb-proof-main">
+                <span className="wb-proof-hero accent">
+                  {speedup ? `${speedup}×` : racing ? "…" : "—"}
+                </span>
+                <div style={{ textAlign: "right", font: "500 11.5px var(--mono)" }}>
+                  <div style={{ color: "var(--primary)", fontWeight: 700 }}>
+                    Decision-1: {d1Ms ? `${d1Ms} ms` : racing ? "running…" : "—"}
+                  </div>
+                  <div style={{ color: "var(--terra)" }}>
+                    {comparisonModelName}:{" "}
+                    {terraMs ? `${terraMs} ms` : racing ? "running…" : "—"}
+                  </div>
+                </div>
+              </div>
+              <div className="wb-proof-sub">
+                <span>Zero autoregressive generation</span>
+                <span>
+                  {d1Ms && terraMs
+                    ? `Saved ${terraMs - d1Ms} ms / call`
+                    : "Ready"}
+                </span>
+              </div>
+            </div>
+
+            {/* Pillar 2: Ground-Truth Correctness */}
+            <div className="wb-proof-cell">
+              <div className="wb-proof-label">
+                <span>02 · Ground-Truth Accuracy</span>
+                <span>Verified Policy Answers</span>
+              </div>
+              <div className="wb-proof-main">
+                <span className="wb-proof-hero accent">
+                  {d1Result && correctnessSummary.totalQuestions > 0
+                    ? `${correctnessSummary.d1AccuracyPct}%`
+                    : racing
+                    ? "…"
+                    : "—"}
+                </span>
+                <div style={{ textAlign: "right", font: "500 11.5px var(--mono)" }}>
+                  <div style={{ color: "var(--primary)", fontWeight: 700 }}>
+                    Decision-1:{" "}
+                    {d1Result && correctnessSummary.totalQuestions > 0
+                      ? `${correctnessSummary.d1Correct}/${correctnessSummary.totalQuestions} pass`
+                      : "—"}
+                  </div>
+                  <div style={{ color: "var(--terra)" }}>
+                    {comparisonModelName}:{" "}
+                    {terraResult && correctnessSummary.totalQuestions > 0
+                      ? `${correctnessSummary.terraCorrect}/${correctnessSummary.totalQuestions} (${correctnessSummary.terraAccuracyPct}%)`
+                      : "—"}
+                  </div>
+                </div>
+              </div>
+              <div className="wb-proof-sub">
+                <span>
+                  Avg Confidence: {correctnessSummary.d1AvgConfidencePct}%
+                </span>
+                <span>
+                  Model Agreement:{" "}
+                  {comparedCount > 0
+                    ? `${agreedCount}/${comparedCount} (${Math.round(
+                        (agreedCount / comparedCount) * 100
+                      )}%)`
+                    : "—"}
+                </span>
+              </div>
+            </div>
+
+            {/* Pillar 3: Production Economics */}
+            <div className="wb-proof-cell">
+              <div className="wb-proof-label">
+                <span>03 · Production Economics</span>
+                <span>$0.042/1M In · $0 Out</span>
+              </div>
+              <div className="wb-proof-main">
+                <span className="wb-proof-hero accent">
+                  {economicsSummary.savingsPct}%{" "}
+                  <small style={{ fontSize: 13, fontWeight: 600 }}>saved</small>
+                </span>
+                <div style={{ textAlign: "right", font: "500 11.5px var(--mono)" }}>
+                  <div style={{ color: "var(--primary)", fontWeight: 700 }}>
+                    Decision-1: ${economicsSummary.d1CostPer1kUsd.toFixed(4)} /
+                    1k
+                  </div>
+                  <div style={{ color: "var(--terra)" }}>
+                    {comparisonModelName}: $
+                    {economicsSummary.terraCostPer1kUsd.toFixed(3)} / 1k
+                  </div>
+                </div>
+              </div>
+              <div className="wb-proof-sub">
+                <span>{economicsSummary.costMultiplier}× lower cost</span>
+                <span>
+                  Saves $
+                  {economicsSummary.monthlySavingsUsd.toLocaleString("en-US", {
+                    maximumFractionDigits: 0,
+                  })}
+                  /mo @ {(economicsSummary.dailyVolume / 1000).toFixed(0)}k/day
+                </span>
+              </div>
+            </div>
+          </section>
+
+          {/* TIER 3: Unified Criterion Verification Table & Secondary Views */}
+          <section className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <div
+              style={{
+                padding: "14px 20px",
+                borderBottom: "1px solid var(--border)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 12,
+                background: "var(--bg-card)",
+              }}
+            >
+              <div>
+                <span className="eyebrow">
+                  03 · CRITERION-BY-CRITERION VERIFICATION
+                </span>
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    color: "var(--text-muted)",
+                    marginTop: 2,
+                  }}
+                >
+                  Calibrated System-1 probabilities vs. generative LLM outputs
+                  verified against ground truth
+                </div>
+              </div>
+
+              <div className="nav-tabs">
+                <button
+                  type="button"
+                  className={`nav-tab ${outTab === "table" ? "active" : ""}`}
+                  onClick={() => setOutTab("table")}
+                >
+                  Verification Table
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab ${outTab === "visual" ? "active" : ""}`}
+                  onClick={() => setOutTab("visual")}
+                >
+                  Side-by-Side Meters
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab ${outTab === "probs" ? "active" : ""}`}
+                  onClick={() => setOutTab("probs")}
+                >
+                  Probability Distribution
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab ${outTab === "api" ? "active" : ""}`}
+                  onClick={() => setOutTab("api")}
+                >
+                  API Payload &amp; cURL
+                </button>
+              </div>
+            </div>
+
+            {/* DEFAULT VIEW: Clean Scannable Verification Table */}
+            {outTab === "table" && (
+              <div className="wb-table-wrap">
+                <table className="wb-table">
+                  <thead>
+                    <tr>
+                      <th>Criterion / Question</th>
+                      <th>Type</th>
+                      <th>Expected Ground Truth</th>
+                      <th>Microsoft-Decision-1 (Calibrated)</th>
+                      <th>{comparisonModelName} (Baseline)</th>
+                      <th>Verification</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {correctnessSummary.rows.map((r) => (
-                      <tr
-                        key={r.questionId}
-                        style={{
-                          borderBottom: "1px solid var(--border-soft)",
-                        }}
-                      >
-                        <td style={{ padding: "9px 6px" }}>
-                          <b>{r.questionId}</b>
-                          <div
+                    {questions.map((q) => {
+                      const d1Ans = d1Result?.answers?.[q.id];
+                      const terraAns = terraResult?.answers?.[q.id];
+                      const rowCorr = correctnessSummary.rows.find(
+                        (r) => r.questionId === q.id
+                      );
+                      const pct = d1Ans ? Math.round(d1Ans.value * 100) : 0;
+
+                      return (
+                        <tr key={q.id}>
+                          <td style={{ maxWidth: 290 }}>
+                            <div style={{ fontWeight: 600, color: "var(--text)" }}>
+                              {q.label}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11.5,
+                                color: "var(--text-muted)",
+                                marginTop: 2,
+                              }}
+                            >
+                              {q.instructions}
+                            </div>
+                          </td>
+                          <td>
+                            <span
+                              style={{
+                                font: "600 10px var(--mono)",
+                                textTransform: "uppercase",
+                                padding: "2px 7px",
+                                borderRadius: 4,
+                                background: "var(--bg-card-soft)",
+                                border: "1px solid var(--border)",
+                              }}
+                            >
+                              {q.type}
+                            </span>
+                          </td>
+                          <td
                             style={{
-                              fontSize: "0.66rem",
-                              color: "var(--text-muted)",
+                              font: "600 12px var(--mono)",
+                              color: "var(--text)",
                             }}
                           >
-                            {r.questionLabel}
-                          </div>
-                        </td>
-                        <td style={{ padding: "9px 6px" }}>
-                          <span className="badge">{r.type}</span>
-                        </td>
-                        <td
-                          style={{
-                            padding: "9px 6px",
-                            color: "var(--accent-d1)",
-                          }}
-                        >
-                          <b>{r.expected}</b>
-                        </td>
-                        <td style={{ padding: "9px 6px" }}>
-                          <b>{r.d1Actual}</b>{" "}
-                          {r.d1Confidence != null && (
-                            <span style={{ color: "var(--text-muted)" }}>
-                              ({r.d1Confidence}%)
-                            </span>
-                          )}{" "}
-                          {r.d1Match === true && (
-                            <span style={{ color: "var(--accent-d1)" }}>
-                              ✓ PASS
-                            </span>
-                          )}
-                          {r.d1Match === false && (
-                            <span style={{ color: "var(--danger)" }}>
-                              ✗ MISS
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ padding: "9px 6px" }}>
-                          <b>{r.terraActual}</b>{" "}
-                          {r.terraConfidence != null && (
-                            <span style={{ color: "var(--text-muted)" }}>
-                              ({r.terraConfidence}%)
-                            </span>
-                          )}{" "}
-                          {r.terraMatch === true && (
-                            <span style={{ color: "var(--accent-d1)" }}>
-                              ✓ PASS
-                            </span>
-                          )}
-                          {r.terraMatch === false && (
-                            <span style={{ color: "var(--danger)" }}>
-                              ✗ MISS
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ padding: "9px 6px" }}>
-                          {r.modelsAgree === true ? (
-                            <span style={{ color: "var(--accent-d1)" }}>
-                              ✓ Agree
-                            </span>
-                          ) : r.modelsAgree === false ? (
-                            <span style={{ color: "var(--warn)" }}>
-                              ≠ Diverge
-                            </span>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                            {rowCorr?.expected || "—"}
+                          </td>
+                          <td style={{ minWidth: 210 }}>
+                            {d1Ans ? (
+                              <div>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "baseline",
+                                    gap: 8,
+                                  }}
+                                >
+                                  <b
+                                    style={{
+                                      color: "var(--primary)",
+                                      fontSize: 13.5,
+                                    }}
+                                  >
+                                    {d1Ans.label}
+                                  </b>
+                                  <span
+                                    style={{
+                                      font: "500 10.5px var(--mono)",
+                                      color: "var(--text-muted)",
+                                    }}
+                                  >
+                                    {d1Ans.detail}
+                                  </span>
+                                </div>
+                                <div
+                                  style={{
+                                    height: 5,
+                                    borderRadius: 3,
+                                    background: "var(--track)",
+                                    marginTop: 5,
+                                    overflow: "hidden",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      width: `${pct}%`,
+                                      height: "100%",
+                                      background: "var(--primary)",
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <span style={{ color: "var(--text-dim)" }}>
+                                {racing ? "Evaluating…" : "—"}
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            {terraAns ? (
+                              <div>
+                                <b
+                                  style={{
+                                    color: "var(--terra)",
+                                    fontSize: 13,
+                                  }}
+                                >
+                                  {terraAns.label}
+                                </b>
+                                <div
+                                  style={{
+                                    font: "500 10.5px var(--mono)",
+                                    color: "var(--text-muted)",
+                                    marginTop: 2,
+                                  }}
+                                >
+                                  {terraAns.detail}
+                                </div>
+                              </div>
+                            ) : (
+                              <span style={{ color: "var(--text-dim)" }}>
+                                {racing ? "Generating…" : "—"}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ font: "600 11px var(--mono)" }}>
+                            {rowCorr?.d1Match === true ? (
+                              <span
+                                style={{
+                                  color: "var(--primary)",
+                                  background: "var(--primary-soft)",
+                                  padding: "3px 8px",
+                                  borderRadius: 4,
+                                  border: "1px solid var(--border-strong)",
+                                }}
+                              >
+                                ✓ PASS
+                              </span>
+                            ) : rowCorr?.d1Match === false ? (
+                              <span
+                                style={{
+                                  color: "var(--danger)",
+                                  background: "var(--danger-soft)",
+                                  padding: "3px 8px",
+                                  borderRadius: 4,
+                                }}
+                              >
+                                ✗ DIFF
+                              </span>
+                            ) : (
+                              <span style={{ color: "var(--text-dim)" }}>—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
+            )}
 
-          {outTab === "visual" && (
-            <div className="panels two">
-              {/* Decision-1 Panel */}
-              <div className="panel winner">
-                <div className="panel-head">
-                  <div>
-                    <span className="badge">MICROSOFT-DECISION-1</span>
-                    <div
+            {/* SIDE-BY-SIDE VISUAL METERS */}
+            {outTab === "visual" && (
+              <div style={{ padding: 20 }} className="panels two">
+                <div className="panel winner">
+                  <div className="panel-head">
+                    <div>
+                      <span className="badge">MICROSOFT-DECISION-1</span>
+                      <div
+                        style={{
+                          font: "500 11px var(--mono)",
+                          color: "var(--text-muted)",
+                          marginTop: 3,
+                        }}
+                      >
+                        /providers/microsoft/v1/systemone
+                      </div>
+                    </div>
+                    <span
                       style={{
-                        font: "600 11px var(--mono)",
-                        color: "var(--text-muted)",
-                        marginTop: 4,
+                        font: "700 13px var(--mono)",
+                        color: "var(--primary)",
                       }}
                     >
-                      /providers/microsoft/v1/systemone
-                    </div>
-                  </div>
-                  <div
-                    style={{ textAlign: "right", font: "600 12px var(--mono)" }}
-                  >
-                    <span style={{ color: "var(--primary-bright)" }}>
-                      {d1Ms ? `${d1Ms} ms` : "…"}
+                      {d1Ms ? `${d1Ms} ms` : "—"}
                     </span>
                   </div>
-                </div>
-                <div className="panel-body">
                   <div
+                    className="panel-body"
                     style={{
                       display: "flex",
                       flexDirection: "column",
@@ -983,37 +984,12 @@ export default function StudioCompareView({
                       const ans = d1Result?.answers?.[q.id];
                       const pct = ans ? Math.round(ans.value * 100) : 0;
                       const cls = ans?.cls || "";
-                      const rowCorr = correctnessSummary.rows.find(
-                        (r) => r.questionId === q.id
-                      );
                       return (
                         <div key={q.id} className="dq">
                           <div className="dq-head">
                             <span className="dq-label">{q.label}</span>
                             <span className={`dq-ans ${cls}`}>
                               {ans ? ans.label : "…"}
-                              {ans && rowCorr?.d1Match === true && (
-                                <span
-                                  style={{
-                                    marginLeft: 6,
-                                    color: "var(--accent-d1)",
-                                    fontSize: 10.5,
-                                  }}
-                                >
-                                  ✓
-                                </span>
-                              )}
-                              {ans && rowCorr?.d1Match === false && (
-                                <span
-                                  style={{
-                                    marginLeft: 6,
-                                    color: "var(--danger)",
-                                    fontSize: 10.5,
-                                  }}
-                                >
-                                  ✗
-                                </span>
-                              )}
                             </span>
                           </div>
                           <div
@@ -1030,12 +1006,7 @@ export default function StudioCompareView({
                             />
                           </div>
                           <div className="dq-foot">
-                            <span>
-                              type: {q.type}
-                              {rowCorr?.expected && rowCorr.expected !== "—"
-                                ? ` · expected: ${rowCorr.expected}`
-                                : ""}
-                            </span>
+                            <span>type: {q.type}</span>
                             <span>{ans ? ans.detail : "waiting"}</span>
                           </div>
                         </div>
@@ -1043,33 +1014,34 @@ export default function StudioCompareView({
                     })}
                   </div>
                 </div>
-              </div>
 
-              {/* gpt-6.1-terra Panel */}
-              <div className="panel">
-                <div className="panel-head">
-                  <div>
-                    <span className="badge terra">GPT-6.1-TERRA</span>
-                    <div
+                <div className="panel">
+                  <div className="panel-head">
+                    <div>
+                      <span className="badge terra">
+                        {comparisonModelName.toUpperCase()}
+                      </span>
+                      <div
+                        style={{
+                          font: "500 11px var(--mono)",
+                          color: "var(--text-muted)",
+                          marginTop: 3,
+                        }}
+                      >
+                        /openai/v1/responses
+                      </div>
+                    </div>
+                    <span
                       style={{
-                        font: "600 11px var(--mono)",
-                        color: "var(--text-muted)",
-                        marginTop: 4,
+                        font: "700 13px var(--mono)",
+                        color: "var(--terra)",
                       }}
                     >
-                      /openai/v1/responses (icsuaaisea)
-                    </div>
-                  </div>
-                  <div
-                    style={{ textAlign: "right", font: "600 12px var(--mono)" }}
-                  >
-                    <span style={{ color: "var(--terra-bright)" }}>
-                      {terraMs ? `${terraMs} ms` : "…"}
+                      {terraMs ? `${terraMs} ms` : "—"}
                     </span>
                   </div>
-                </div>
-                <div className="panel-body">
                   <div
+                    className="panel-body"
                     style={{
                       display: "flex",
                       flexDirection: "column",
@@ -1111,79 +1083,79 @@ export default function StudioCompareView({
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {outTab === "probs" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {questions.map((q) => {
-                const d1Ans = d1Result?.answers?.[q.id];
-                const terraAns = terraResult?.answers?.[q.id];
-                const p1Map =
-                  d1Ans?.probabilities ||
-                  (q.type === "noul" && d1Ans
-                    ? {
-                        Yes: d1Ans.value,
-                        No: Number((1 - d1Ans.value).toFixed(4)),
-                      }
-                    : {});
-                const p2Map =
-                  terraAns?.probabilities ||
-                  (q.type === "noul" && terraAns
-                    ? {
-                        Yes: terraAns.value,
-                        No: Number((1 - terraAns.value).toFixed(4)),
-                      }
-                    : {});
-                const allLabels = Array.from(
-                  new Set([...Object.keys(p1Map), ...Object.keys(p2Map)])
-                );
-                return (
-                  <div key={q.id} className="panel" style={{ padding: 14 }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginBottom: 10,
-                      }}
-                    >
-                      <b style={{ fontFamily: "var(--mono)" }}>
-                        {q.label} ({q.type})
-                      </b>
-                      <span
-                        style={{ color: "var(--text-muted)", fontSize: 12 }}
+            {/* PROBABILITY DISTRIBUTION VIEW */}
+            {outTab === "probs" && (
+              <div
+                style={{
+                  padding: 20,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                }}
+              >
+                {questions.map((q) => {
+                  const d1Ans = d1Result?.answers?.[q.id];
+                  const terraAns = terraResult?.answers?.[q.id];
+                  const p1Map =
+                    d1Ans?.probabilities ||
+                    (q.type === "noul" && d1Ans
+                      ? {
+                          Yes: d1Ans.value,
+                          No: Number((1 - d1Ans.value).toFixed(4)),
+                        }
+                      : {});
+                  const p2Map =
+                    terraAns?.probabilities ||
+                    (q.type === "noul" && terraAns
+                      ? {
+                          Yes: terraAns.value,
+                          No: Number((1 - terraAns.value).toFixed(4)),
+                        }
+                      : {});
+                  const allLabels = Array.from(
+                    new Set([...Object.keys(p1Map), ...Object.keys(p2Map)])
+                  );
+                  return (
+                    <div key={q.id} className="panel" style={{ padding: 14 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          marginBottom: 10,
+                          flexWrap: "wrap",
+                          gap: 8,
+                        }}
                       >
-                        {q.instructions}
-                      </span>
-                    </div>
-                    {allLabels.map((lbl) => {
-                      const p1 = Math.round((p1Map[lbl] || 0) * 100);
-                      const p2 = Math.round((p2Map[lbl] || 0) * 100);
-                      return (
-                        <div
-                          key={lbl}
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "160px 1fr 75px",
-                            gap: 10,
-                            alignItems: "center",
-                            marginBottom: 6,
-                            fontSize: 12,
-                          }}
+                        <b style={{ fontFamily: "var(--mono)" }}>
+                          {q.label} ({q.type})
+                        </b>
+                        <span
+                          style={{ color: "var(--text-muted)", fontSize: 12 }}
                         >
-                          <span style={{ fontFamily: "var(--mono)" }}>
-                            {lbl}
-                          </span>
+                          {q.instructions}
+                        </span>
+                      </div>
+                      {allLabels.map((lbl) => {
+                        const p1 = Math.round((p1Map[lbl] || 0) * 100);
+                        const p2 = Math.round((p2Map[lbl] || 0) * 100);
+                        return (
                           <div
+                            key={lbl}
                             style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 3,
+                              display: "grid",
+                              gridTemplateColumns: "150px 1fr 56px 1fr 56px",
+                              gap: 10,
+                              alignItems: "center",
+                              font: "500 11.5px var(--mono)",
+                              marginBottom: 6,
                             }}
                           >
+                            <span>{lbl}</span>
                             <div
                               style={{
-                                height: 6,
+                                height: 7,
                                 background: "var(--track)",
                                 borderRadius: 3,
                                 overflow: "hidden",
@@ -1193,13 +1165,21 @@ export default function StudioCompareView({
                                 style={{
                                   width: `${p1}%`,
                                   height: "100%",
-                                  background: "var(--primary-bright)",
+                                  background: "var(--primary)",
                                 }}
                               />
                             </div>
+                            <span
+                              style={{
+                                color: "var(--primary)",
+                                textAlign: "right",
+                              }}
+                            >
+                              {p1}%
+                            </span>
                             <div
                               style={{
-                                height: 6,
+                                height: 7,
                                 background: "var(--track)",
                                 borderRadius: 3,
                                 overflow: "hidden",
@@ -1209,89 +1189,317 @@ export default function StudioCompareView({
                                 style={{
                                   width: `${p2}%`,
                                   height: "100%",
-                                  background: "var(--terra-bright)",
+                                  background: "var(--terra)",
                                 }}
                               />
                             </div>
-                          </div>
-                          <span
-                            style={{
-                              fontFamily: "var(--mono)",
-                              textAlign: "right",
-                              fontSize: 11,
-                            }}
-                          >
-                            <span style={{ color: "var(--primary-bright)" }}>
-                              {p1}%
-                            </span>{" "}
-                            /{" "}
-                            <span style={{ color: "var(--terra-bright)" }}>
+                            <span
+                              style={{
+                                color: "var(--terra)",
+                                textAlign: "right",
+                              }}
+                            >
                               {p2}%
                             </span>
-                          </span>
-                        </div>
-                      );
-                    })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* API PAYLOAD & CURL VIEW */}
+            {outTab === "api" && (
+              <div
+                style={{
+                  padding: 20,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 14,
+                }}
+              >
+                {activeSample.codeRule && (
+                  <div className="panel">
+                    <div className="panel-head">
+                      <span className="badge">
+                        DETERMINISTIC GATE RULE IN APPLICATION CODE
+                      </span>
+                    </div>
+                    <div className="panel-body">
+                      <pre className="code">{activeSample.codeRule}</pre>
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-
-          {outTab === "json" && (
-            <div className="panels two">
-              <div className="panel">
-                <div className="panel-head">
-                  <span className="badge">Microsoft-Decision-1 JSON</span>
+                )}
+                <div className="panel">
+                  <div className="panel-head">
+                    <span className="badge">
+                      MICROSOFT ENTRA ID CURL — /providers/microsoft/v1/systemone
+                    </span>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => navigator.clipboard?.writeText(curlSnippet)}
+                    >
+                      Copy cURL
+                    </button>
+                  </div>
+                  <div className="panel-body">
+                    <pre className="code">{curlSnippet}</pre>
+                  </div>
                 </div>
-                <div className="panel-body">
-                  <pre className="code">
-                    {JSON.stringify(
-                      d1Result?.rawPayload || d1Result || { status: "waiting" },
-                      null,
-                      2
-                    )}
-                  </pre>
+                <div className="panels two">
+                  <div className="panel">
+                    <div className="panel-head">
+                      <span className="badge">DECISION-1 RAW RESPONSE</span>
+                    </div>
+                    <div className="panel-body">
+                      <pre className="code">
+                        {d1Result
+                          ? JSON.stringify(d1Result, null, 2)
+                          : "// Run evaluation to inspect raw JSON"}
+                      </pre>
+                    </div>
+                  </div>
+                  <div className="panel">
+                    <div className="panel-head">
+                      <span className="badge terra">
+                        {comparisonModelName.toUpperCase()} RAW RESPONSE
+                      </span>
+                    </div>
+                    <div className="panel-body">
+                      <pre className="code">
+                        {terraResult
+                          ? JSON.stringify(terraResult, null, 2)
+                          : "// Run evaluation to inspect raw JSON"}
+                      </pre>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="panel">
-                <div className="panel-head">
-                  <span className="badge terra">gpt-6.1-terra JSON</span>
+            )}
+          </section>
+        </div>
+      </div>
+
+      {/* SECONDARY DIALOG: Customize Input Document & Typed Question Schema */}
+      {schemaModalOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setSchemaModalOpen(false)}
+        >
+          <div
+            className="modal-window"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>
+                  Customize Input Document &amp; Decision Questions
                 </div>
-                <div className="panel-body">
-                  <pre className="code">
-                    {JSON.stringify(
-                      terraResult?.rawPayload ||
-                        terraResult || { status: "waiting" },
-                      null,
-                      2
-                    )}
-                  </pre>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  Edit the input payload or add custom Noul / Choice / Score
+                  questions for live evaluation
                 </div>
               </div>
-            </div>
-          )}
-
-          {outTab === "curl" && (
-            <div className="panel">
-              <div className="panel-head">
-                <span className="badge">
-                  POST /providers/microsoft/v1/systemone (Entra ID Bearer Auth)
-                </span>
+              <div style={{ display: "flex", gap: 8 }}>
                 <button
-                  className="ghost"
-                  onClick={() => navigator.clipboard.writeText(curlSnippet)}
+                  type="button"
+                  className="primary"
+                  onClick={() => {
+                    setSchemaModalOpen(false);
+                    runComparison();
+                  }}
                 >
-                  Copy cURL
+                  Apply &amp; Run Evaluation
+                </button>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setSchemaModalOpen(false)}
+                >
+                  Close &times;
                 </button>
               </div>
-              <div className="panel-body">
-                <pre className="code">{curlSnippet}</pre>
+            </div>
+
+            <div
+              className="modal-body"
+              style={{ display: "flex", flexDirection: "column", gap: 16 }}
+            >
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    font: "600 11px var(--mono)",
+                    textTransform: "uppercase",
+                    color: "var(--text-muted)",
+                    marginBottom: 6,
+                  }}
+                >
+                  Input State Document
+                </label>
+                <textarea
+                  value={stateText}
+                  onChange={(e) => setStateText(e.target.value)}
+                  style={{ minHeight: 150, fontFamily: "var(--mono)", fontSize: 12.5 }}
+                />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    font: "600 11px var(--mono)",
+                    textTransform: "uppercase",
+                    color: "var(--text-muted)",
+                    marginBottom: 8,
+                  }}
+                >
+                  Active Decision Questions ({questions.length})
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    maxHeight: 240,
+                    overflowY: "auto",
+                  }}
+                >
+                  {questions.map((q) => (
+                    <div
+                      key={q.id}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "90px 1fr auto",
+                        gap: 10,
+                        alignItems: "center",
+                        padding: "8px 12px",
+                        borderRadius: "var(--radius-sm)",
+                        background: "var(--bg-input)",
+                        border: "1px solid var(--border-soft)",
+                        fontSize: 12.5,
+                      }}
+                    >
+                      <span
+                        style={{
+                          font: "600 10.5px var(--mono)",
+                          textTransform: "uppercase",
+                          color: "var(--primary)",
+                        }}
+                      >
+                        {q.type}
+                      </span>
+                      <div>
+                        <b>{q.label}</b> —{" "}
+                        <span style={{ color: "var(--text-muted)" }}>
+                          {q.instructions}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="ghost"
+                        style={{ padding: "2px 8px", fontSize: 11 }}
+                        onClick={() => removeQuestion(q.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: 14,
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-input)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                }}
+              >
+                <div
+                  style={{
+                    font: "600 11px var(--mono)",
+                    textTransform: "uppercase",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  Add Question to Schema
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 180px",
+                    gap: 8,
+                  }}
+                >
+                  <input
+                    type="text"
+                    placeholder="Question label (e.g. Escalation Required)"
+                    value={newKey}
+                    onChange={(e) => setNewKey(e.target.value)}
+                  />
+                  <CustomSelect
+                    value={newType}
+                    onChange={(val) => setNewType(val as QuestionType)}
+                    searchable={false}
+                    options={[
+                      {
+                        value: "noul",
+                        label: "noul (Yes / No / Unsure)",
+                        badge: "NOUL",
+                        badgeTone: "d1",
+                      },
+                      {
+                        value: "choice",
+                        label: "choice (Multi-option)",
+                        badge: "CHOICE",
+                        badgeTone: "info",
+                      },
+                      {
+                        value: "score",
+                        label: "score (0-3 Rubric)",
+                        badge: "SCORE",
+                        badgeTone: "custom",
+                      },
+                    ]}
+                  />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Question instructions (e.g. Does this request require immediate escalation?)"
+                  value={newInst}
+                  onChange={(e) => setNewInst(e.target.value)}
+                />
+                {newType !== "noul" && (
+                  <input
+                    type="text"
+                    placeholder={
+                      newType === "choice"
+                        ? "Comma-separated options, e.g. approve: Fast track, hold: Manual review"
+                        : "Comma-separated scale, e.g. Low, Medium, High, Critical"
+                    }
+                    value={newCriteriaText}
+                    onChange={(e) => setNewCriteriaText(e.target.value)}
+                  />
+                )}
+                <button
+                  type="button"
+                  className="ghost"
+                  style={{ alignSelf: "flex-start" }}
+                  onClick={addQuestion}
+                >
+                  + Add Question
+                </button>
               </div>
             </div>
-          )}
-        </section>
-      </main>
-    </>
+          </div>
+        </div>
+      )}
+    </main>
   );
 }

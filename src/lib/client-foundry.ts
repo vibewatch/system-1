@@ -32,10 +32,10 @@ export interface AzureClientConfig {
   tokenExpiresAt?: number;
 }
 
-export const CONFIG_STORAGE_KEY = "ms_decision1_azure_config_v1";
+export const CONFIG_STORAGE_KEY = "ms_decision1_azure_config_v2";
 
 export const DEFAULT_AZURE_CONFIG: AzureClientConfig = {
-  mode: "frontend", // Default is frontend-only mode per user requirement
+  mode: "backend", // Default is Frontend + Backend server mode; users can switch to Client-Only (Frontend) mode in Connection Settings
   endpoint: "",
   decisionEndpoint: "",
   decisionDeployment: "Decision-1",
