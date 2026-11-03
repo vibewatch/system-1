@@ -17,7 +17,6 @@ import {
 } from "@/lib/demo-data";
 import type { DecisionRunResult } from "@/lib/foundry";
 import { CustomSelect, type SelectOption } from "./CustomSelect";
-import { Dialog } from "./Dialog";
 
 interface Props {
   allUseCases: StudioSample[];
@@ -33,7 +32,6 @@ interface Props {
     decision1?: DecisionRunResult;
     terra?: DecisionRunResult;
   }>;
-  replayMode?: boolean;
 }
 
 interface CaseBenchmarkResult {
@@ -94,7 +92,6 @@ export function UseCaseFrameworkView({
   onSaveCustomUseCase,
   onDeleteCustomUseCase,
   onRunComparePair,
-  replayMode = false,
 }: Props) {
   const [selectedIndustry, setSelectedIndustry] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -515,9 +512,9 @@ export function UseCaseFrameworkView({
   };
 
   return (
-    <main className="layout single catalog-page" style={{ gap: 24 }}>
+    <main className="layout single" style={{ gap: 18 }}>
       {/* TOP BAR: Title, Industry Filters & Actions */}
-      <section className="catalog-heading">
+      <section className="card" style={{ padding: "18px 22px", gap: 14 }}>
         <div
           style={{
             display: "flex",
@@ -529,7 +526,7 @@ export function UseCaseFrameworkView({
         >
           <div>
             <span className="eyebrow">
-              The solution library
+              02 · ENTERPRISE SOLUTIONS CATALOG &amp; BATCH VERIFICATION
             </span>
             <h1
               style={{
@@ -539,7 +536,7 @@ export function UseCaseFrameworkView({
                 letterSpacing: "-0.025em",
               }}
             >
-              Find a problem worth testing.
+              16 Production Decision Gates Across 9 Industries
             </h1>
             <p
               style={{
@@ -549,40 +546,71 @@ export function UseCaseFrameworkView({
                 maxWidth: 740,
               }}
             >
-              Explore {allUseCases.length} business scenarios, or bring your own.
-              Each one connects a real problem with a capability you can test.
+              Each scenario explains the real-world operational bottleneck it
+              solves, the specific capability of <b>Microsoft-Decision-1</b> it
+              proves, and includes paired <b>Violation vs. Compliant</b> ground-truth
+              test cases.
             </p>
           </div>
 
-          <div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="text"
+              placeholder="Search industry or use case…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ width: 210, fontSize: 12.5 }}
+            />
+            <button
+              type="button"
+              className="ghost"
+              disabled={batchRunning}
+              onClick={runBatchSuite}
+            >
+              {batchRunning
+                ? "Verifying Suite…"
+                : `Verify Filtered Suite (${Math.min(
+                    6,
+                    filteredUseCases.length
+                  )})`}
+            </button>
             <button
               type="button"
               className="primary"
-              disabled={replayMode}
-              title={replayMode ? "Return to live mode to create a new solution" : undefined}
               onClick={() => setShowBuilderModal(true)}
             >
-              Create your solution &rarr;
+              + Create Custom Solution
             </button>
           </div>
         </div>
 
-        <div className="catalog-filters">
-          <input type="text" aria-label="Search solutions" placeholder="Search a problem or industry…" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
-          <CustomSelect value={selectedIndustry} onChange={setSelectedIndustry} minWidth={0} options={[
-            { value: "all", label: `All industries (${allUseCases.length})` },
-            ...Array.from(new Set(allUseCases.map((uc) => uc.industry).filter((industry): industry is string => Boolean(industry)))).map((industry) => ({ value: industry, label: `${industry} (${industryCounts[industry] || 0})` })),
-          ]} />
-          <span>{filteredUseCases.length} solutions</span>
+        {/* Industry Filter Bar */}
+        <div className="industry-pills">
+          <button
+            type="button"
+            className={`industry-pill ${
+              selectedIndustry === "all" ? "active" : ""
+            }`}
+            onClick={() => setSelectedIndustry("all")}
+          >
+            All Industries ({industryCounts.all})
+          </button>
+          {INDUSTRY_VERTICALS.map((ind) => (
+            <button
+              key={ind}
+              type="button"
+              className={`industry-pill ${
+                selectedIndustry === ind ? "active" : ""
+              }`}
+              onClick={() => setSelectedIndustry(ind)}
+            >
+              {ind} ({industryCounts[ind] || 0})
+            </button>
+          ))}
         </div>
       </section>
 
-      <details className="catalog-batch-details">
-        <summary>Batch verification &amp; cost estimates{batchRunning ? " · Running…" : aggregateStats ? ` · ${aggregateStats.solutionsTested} tested` : ""}</summary>
-        <div className="catalog-batch-actions">
-          <p>Verify up to six filtered solutions against their expected labels. Cost projections use configured pricing and example traffic volumes.</p>
-          <button type="button" className="ghost" disabled={batchRunning || !filteredUseCases.length} onClick={runBatchSuite}>{batchRunning ? "Verifying…" : `Verify ${Math.min(6, filteredUseCases.length)} solutions`}</button>
-        </div>
+      {/* EXECUTIVE SUMMARY BAR: Pricing, Economics & Live Batch Accuracy */}
       <section className="wb-proof-strip">
         <div className="wb-proof-cell">
           <div className="wb-proof-label">
@@ -668,9 +696,8 @@ export function UseCaseFrameworkView({
           </div>
         </div>
       </section>
-      </details>
 
-      {!filteredUseCases.length && <div className="catalog-empty"><h2>No matching solutions</h2><p>Try another search or industry.</p><button className="text-button" onClick={() => { setSearchQuery(""); setSelectedIndustry("all"); }}>Clear filters &rarr;</button></div>}
+      {/* CLEAN EDITORIAL SOLUTION CARDS GRID */}
       <div className="uc-grid">
         {filteredUseCases.map((uc) => {
           const rep = reports[uc.id];
@@ -710,14 +737,67 @@ export function UseCaseFrameworkView({
 
                 <h3 className="uc-title">{uc.label}</h3>
 
-                <p className="uc-desc">{narrative.problemSolved}</p>
-                <details className="purpose-disclosure">
-                  <summary>Capability &amp; estimated cost</summary>
-                  <div className="purpose-content">
-                    <p>{narrative.whatItProves}</p>
-                    <p>Estimated cost / 1,000 calls: Decision-1 ${eco.d1CostPer1kUsd.toFixed(4)} vs. {comparisonModelName} ${eco.terraCostPer1kUsd.toFixed(2)}. {eco.savingsPct}% estimated savings.</p>
+                {/* Structured Problem & Proof Explanation (No Cluttered Stacking) */}
+                <div
+                  style={{
+                    marginTop: 10,
+                    border: "1px solid var(--border-soft)",
+                    borderRadius: "var(--radius-sm)",
+                    background: "var(--bg-input)",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "9px 12px",
+                      borderBottom: "1px solid var(--border-soft)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        font: "700 9.5px var(--mono)",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.08em",
+                        color: "var(--terra)",
+                        marginBottom: 2,
+                      }}
+                    >
+                      Problem Solved (解决什么问题)
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        lineHeight: 1.45,
+                        color: "var(--text)",
+                      }}
+                    >
+                      {narrative.problemSolved}
+                    </div>
                   </div>
-                </details>
+
+                  <div style={{ padding: "9px 12px" }}>
+                    <div
+                      style={{
+                        font: "700 9.5px var(--mono)",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.08em",
+                        color: "var(--primary)",
+                        marginBottom: 2,
+                      }}
+                    >
+                      What It Proves (证明什么能力)
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        lineHeight: 1.45,
+                        color: "var(--text)",
+                      }}
+                    >
+                      {narrative.whatItProves}
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Card Footer: Cost Telemetry, Live Accuracy Result, and Actions */}
@@ -735,7 +815,14 @@ export function UseCaseFrameworkView({
                     gap: 6,
                   }}
                 >
-                  <span>{uc.testCases?.length || 1} test cases · {uc.questions.length} questions</span>
+                  <span>
+                    D1:{" "}
+                    <b style={{ color: "var(--primary)" }}>
+                      ${eco.d1CostPer1kUsd.toFixed(4)}/1k
+                    </b>{" "}
+                    vs ${eco.terraCostPer1kUsd.toFixed(2)}/1k (
+                    <b>{eco.savingsPct}% saved</b>)
+                  </span>
 
                   {rep && !rep.running && !rep.error && (
                     <button
@@ -751,7 +838,6 @@ export function UseCaseFrameworkView({
                     </button>
                   )}
                 </div>
-                {rep?.error && <p role="alert" className="comparison-error">{rep.error}</p>}
 
                 {/* Collapsible Per-Case Verification Breakdown */}
                 {rep && !rep.running && !rep.error && isExpanded && (
@@ -805,10 +891,10 @@ export function UseCaseFrameworkView({
                   <div style={{ display: "flex", gap: 6 }}>
                     <button
                       type="button"
-                      className="text-button"
-                      onClick={() => onLaunchInStudio(uc, false)}
+                      className="primary"
+                      onClick={() => onLaunchInStudio(uc, true)}
                     >
-                      Try this scenario &rarr;
+                      Open in Workbench &rarr;
                     </button>
                     <button
                       type="button"
@@ -816,7 +902,7 @@ export function UseCaseFrameworkView({
                       disabled={rep?.running}
                       onClick={() => runSolutionBenchmark(uc)}
                     >
-                      {rep?.running ? "Testing…" : `Verify ${uc.testCases?.length || 1} cases`}
+                      {rep?.running ? "Testing…" : "Verify 2 Cases"}
                     </button>
                   </div>
 
@@ -825,7 +911,6 @@ export function UseCaseFrameworkView({
                       type="button"
                       className="ghost"
                       style={{ color: "var(--danger)" }}
-                      disabled={replayMode}
                       onClick={() => onDeleteCustomUseCase(uc.id)}
                     >
                       Delete
@@ -839,9 +924,15 @@ export function UseCaseFrameworkView({
       </div>
 
       {/* MODAL DIALOG: Custom Solution Builder */}
-      <Dialog open={showBuilderModal} onClose={() => setShowBuilderModal(false)} title="Create your solution" maxWidth={860}>
+      {showBuilderModal && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setShowBuilderModal(false)}
+        >
           <div
-            className="builder-content"
+            className="modal-window"
+            style={{ maxWidth: 860 }}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-head">
               <div>
@@ -1116,7 +1207,8 @@ export function UseCaseFrameworkView({
               </div>
             </div>
           </div>
-      </Dialog>
+        </div>
+      )}
     </main>
   );
 }

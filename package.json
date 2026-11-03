@@ -6,9 +6,7 @@
     "dev": "tsx server.ts",
     "build": "next build",
     "start": "NODE_ENV=production tsx server.ts",
-    "typecheck": "tsc --noEmit",
-    "replay:record": "tsx scripts/record-replays.ts",
-    "replay:test": "tsx --test src/lib/replay.test.ts"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@azure/identity": "^4.7.0",

@@ -8,5 +8,3 @@ build/
 *.log
 tsconfig.tsbuildinfo
 .DS_Store
-public/replays/*.partial
-public/replays/*.ready

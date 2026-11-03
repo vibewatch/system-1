@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   RUNTIME_SCENARIOS,
   SHARED_ENTITY_FIELDS,
@@ -9,8 +9,6 @@ import {
 } from "@/lib/demo-data";
 import type { ExtractedSpan, NormalizedDecision } from "@/lib/foundry";
 import { CustomSelect } from "./CustomSelect";
-import { refundGate, type NavigationProgress } from "@/lib/decision-story";
-import { DecisionStoryView, type ShowcaseMode, type StoryCheckpoint } from "./DecisionStoryView";
 
 interface RuntimeViewProps {
   sendWs: (action: string, payload?: Record<string, any>) => boolean;
@@ -19,15 +17,6 @@ interface RuntimeViewProps {
   ) => () => void;
   wsConnected: boolean;
   externalScenarioId?: string | null;
-  replayMode?: boolean;
-  replayLoading?: boolean;
-  comparisonModelName?: string;
-  showcaseMode?: ShowcaseMode;
-  animationPaused?: boolean;
-  onShowcaseModeChange?: (mode: ShowcaseMode) => void;
-  onPlayRecorded?: (scenarioId: string) => void;
-  onOpenWorkbench?: (sampleId?: string) => void;
-  onOpenTriage?: () => void;
 }
 
 interface MomentItem {
@@ -46,15 +35,6 @@ export default function RuntimeView({
   subscribeWs,
   wsConnected,
   externalScenarioId,
-  replayMode = false,
-  replayLoading = false,
-  comparisonModelName = "gpt-6.1-terra",
-  showcaseMode = "solution",
-  animationPaused = false,
-  onShowcaseModeChange,
-  onPlayRecorded,
-  onOpenWorkbench,
-  onOpenTriage,
 }: RuntimeViewProps) {
   const [scenarioId, setScenarioId] = useState(RUNTIME_SCENARIOS[0].id);
 
@@ -105,18 +85,6 @@ export default function RuntimeView({
     ending: { text: string; expect: Record<string, string> };
   } | null>(null);
   const [streamDone, setStreamDone] = useState(false);
-  const [streamError, setStreamError] = useState("");
-  const [storyStage, setStoryStage] = useState(-1);
-  const [inferencePhase, setInferencePhase] = useState<"idle" | "receiving" | "evaluating" | "decided" | "stopped">("idle");
-  const [modelInput, setModelInput] = useState("");
-  const [checkpoints, setCheckpoints] = useState<StoryCheckpoint[]>([]);
-  const [baselineCheckpoints, setBaselineCheckpoints] = useState<StoryCheckpoint[]>([]);
-  const modelInputRef = useRef("");
-  const [showBaseline, setShowBaseline] = useState(false);
-  const [navigationProgress, setNavigationProgress] = useState<NavigationProgress | null>(null);
-  const isStory = Boolean(scenario.stages || scenario.navigation);
-  const gate = refundGate(d1Answers);
-  const baselineGate = refundGate(terraAnswers);
 
   // Telemetry counters
   const [d1Calls, setD1Calls] = useState(0);
@@ -133,38 +101,6 @@ export default function RuntimeView({
   const questionsRef = useRef<DecisionQuestion[]>(questions);
   const scrollBoxRef = useRef<HTMLDivElement | null>(null);
 
-  const resetRun = useCallback(() => {
-    prevLabelsRef.current = {};
-    transcriptRef.current = "";
-    setTranscript("");
-    setSpans([]);
-    setD1Answers({});
-    setTerraAnswers({});
-    setD1History({});
-    setTerraHistory({});
-    setFlipcast(null);
-    setMoments([]);
-    setWordFlags([]);
-    setPickInfo(null);
-    setStreamDone(false);
-    setStreamError("");
-    setStoryStage(-1);
-    setInferencePhase("idle");
-    setModelInput("");
-    modelInputRef.current = "";
-    setCheckpoints([]);
-    setBaselineCheckpoints([]);
-    setNavigationProgress(null);
-    setD1Calls(0);
-    setD1MsTotal(0);
-    setD1LastMs(0);
-    setTerraCalls(0);
-    setTerraMsTotal(0);
-    setTerraLastMs(0);
-    setExCalls(0);
-    setExMsTotal(0);
-  }, []);
-
   useEffect(() => {
     questionsRef.current = questions;
   }, [questions]);
@@ -174,8 +110,7 @@ export default function RuntimeView({
       RUNTIME_SCENARIOS.find((s) => s.id === scenarioId) ||
       RUNTIME_SCENARIOS[0];
     setQuestions([...sc.questions]);
-    resetRun();
-  }, [scenarioId, resetRun]);
+  }, [scenarioId]);
 
   const entityFields = Object.keys({
     ...SHARED_ENTITY_FIELDS,
@@ -185,32 +120,9 @@ export default function RuntimeView({
   useEffect(() => {
     return subscribeWs(({ event, data }) => {
       if (event === "runtime_started") {
-        resetRun();
         setRunning(true);
         setStreamDone(false);
         setPickInfo({ pick: data.pick, ending: data.ending });
-        setStoryStage(-1);
-      } else if (event === "runtime_story_stage") {
-        setStoryStage(data.index);
-        setInferencePhase("receiving");
-        setD1Answers({});
-        setTerraAnswers({});
-        setD1LastMs(0);
-        setTerraLastMs(0);
-        setModelInput("");
-        modelInputRef.current = "";
-      } else if (event === "runtime_evaluation_started") {
-        setInferencePhase("evaluating");
-        setModelInput(data.modelInput);
-        modelInputRef.current = data.modelInput;
-        if (Array.isArray(data.questions)) {
-          questionsRef.current = data.questions;
-          setQuestions(data.questions);
-        }
-      } else if (event === "runtime_navigation_state") {
-        setNavigationProgress(data as NavigationProgress);
-        setCheckpoints(previous => previous.map(item => item.index === data.index ? { ...item, navigation: data as NavigationProgress } : item));
-        setBaselineCheckpoints(previous => previous.map(item => item.index === data.index ? { ...item, navigation: data as NavigationProgress } : item));
       } else if (event === "runtime_token") {
         const nextText =
           typeof data.transcript === "string"
@@ -234,8 +146,6 @@ export default function RuntimeView({
         setD1MsTotal((t) => t + lat);
         setD1LastMs(lat);
         setD1Answers(answers);
-        setInferencePhase("decided");
-        if (Number.isInteger(data.index)) setCheckpoints((previous) => [...previous.filter((item) => item.index !== data.index), { index: data.index, title: data.currentNode, latencyMs: lat, answers, modelInput: modelInputRef.current, questions: questionsRef.current }]);
 
         setD1History((prev) => {
           const next = { ...prev };
@@ -300,7 +210,6 @@ export default function RuntimeView({
         setTerraMsTotal((t) => t + lat);
         setTerraLastMs(lat);
         setTerraAnswers(answers);
-        if (Number.isInteger(data.index)) setBaselineCheckpoints(previous => [...previous.filter(item => item.index !== data.index), { index: data.index, title: data.currentNode, latencyMs: lat, answers, modelInput: modelInputRef.current, questions: questionsRef.current }]);
         setTerraHistory((prev) => {
           const next = { ...prev };
           for (const [k, ans] of Object.entries(answers)) {
@@ -317,28 +226,41 @@ export default function RuntimeView({
         }
       } else if (event === "runtime_done" || event === "runtime_stopped") {
         setRunning(false);
-        if (event === "runtime_stopped" || data.ok === false) setInferencePhase("stopped");
         if (event === "runtime_done") {
-          setStreamDone(data.ok !== false);
-          if (data.ok === false) setStreamError(data.error || "The story could not complete its model checks.");
+          setStreamDone(true);
         }
       }
     });
-  }, [subscribeWs, resetRun]);
+  }, [subscribeWs]);
 
   const startStream = () => {
     if (running) {
       sendWs("stop_runtime");
       setRunning(false);
-      setInferencePhase("stopped");
       return;
     }
-    resetRun();
-    if (scenario.navigation) setQuestions([...scenario.questions]);
+    prevLabelsRef.current = {};
+    transcriptRef.current = "";
+    setTranscript("");
+    setSpans([]);
+    setD1Answers({});
+    setTerraAnswers({});
+    setD1History({});
+    setTerraHistory({});
+    setFlipcast(null);
+    setMoments([]);
+    setWordFlags([]);
+    setStreamDone(false);
+    setD1Calls(0);
+    setD1MsTotal(0);
+    setTerraCalls(0);
+    setTerraMsTotal(0);
+    setExCalls(0);
+    setExMsTotal(0);
 
     sendWs("start_runtime", {
       scenarioId,
-      questions: scenario.navigation ? scenario.questions : questions,
+      questions,
     });
   };
 
@@ -367,14 +289,11 @@ export default function RuntimeView({
   const renderTranscriptTurns = () => {
     if (!transcript) {
       return (
-        isStory ? <div className="story-preview">
-          <span className="eyebrow">THE SCENARIO · SCRIPT PREVIEW, NOT MODEL OUTPUT</span>
-          <h3>A $75 refund.<br />One untrusted detour.</h3>
-          <div className="preview-move"><span>Finance approves</span><strong>$75 → original verified card</strong><small>The agent prepares the authorized action.</small></div>
-          <div className="preview-move unsafe"><span>A tool tries to override it</span><strong>$750 → external bank account</strong><small>The pending action no longer matches approval.</small></div>
-          <div className="preview-move"><span>Finance gives fresh approval</span><strong>$75 → original verified card</strong><small>Reassess the corrected action, not the old attack.</small></div>
-        </div> : <div className="turn note">
-          Play a recorded story without signing in, or stream a live conversation with your Azure connection. Both models evaluate the evolving input.
+        <div className="turn note">
+          Click <b>Stream Conversation</b> to generate a live customer
+          conversation via <code>gpt-6.1-terra</code> and watch{" "}
+          <b>Microsoft-Decision-1</b> re-evaluate every decision on every word
+          over WebSocket.
         </div>
       );
     }
@@ -460,7 +379,6 @@ export default function RuntimeView({
       const nodes: React.ReactNode[] = [];
       let cursor = t.contentStart;
       segMarkers.forEach((m, mIdx) => {
-        if (m.start < cursor) return;
         if (m.start > cursor) {
           nodes.push(transcript.slice(cursor, m.start));
         }
@@ -507,51 +425,32 @@ export default function RuntimeView({
   const d1Avg = d1Calls ? Math.round(d1MsTotal / d1Calls) : 0;
   const terraAvg = terraCalls ? Math.round(terraMsTotal / terraCalls) : 0;
   const exAvg = exCalls ? Math.round(exMsTotal / exCalls) : 0;
-  const answerLabel = (question: DecisionQuestion, answer?: NormalizedDecision) => {
-    if (!answer) return "…";
-    if (isStory && question.id === "risk_score" && typeof answer.key === "number") {
-      return ["Low", "Review", "High", "Critical"][answer.key] || answer.label;
-    }
-    if (isStory && question.id === "next_action") {
-      return ({ allow_original_refund: "Allow original refund", pause_for_confirmation: "Ask Finance", block_redirect: "Block redirect" } as Record<string, string>)[String(answer.key)] || answer.label;
-    }
-    return answer.label;
-  };
-
-  if (isStory && scenario.story) {
-    return <DecisionStoryView
-      scenario={scenario} questions={questions} transcript={transcript} stageIndex={storyStage}
-      phase={inferencePhase} modelInput={modelInput} answers={d1Answers} baselineAnswers={terraAnswers}
-      latencyMs={d1LastMs} baselineLatencyMs={terraLastMs} calls={d1Calls} checkpoints={checkpoints} baselineCheckpoints={baselineCheckpoints}
-      running={running} complete={streamDone} error={streamError} replayMode={replayMode}
-      replayLoading={replayLoading} ready={wsConnected} comparisonModelName={comparisonModelName}
-      onSelect={setScenarioId} onRun={startStream} onReplay={(id) => onPlayRecorded?.(id)}
-      onVerify={(id) => onOpenWorkbench?.(id)} onTriage={() => onOpenTriage?.()}
-      navigationProgress={navigationProgress}
-      mode={showcaseMode} animationPaused={animationPaused} onModeChange={(mode) => onShowcaseModeChange?.(mode)}
-    />;
-  }
 
   return (
-    <div className="runtime-workspace">
-      <section className="story-hero">
+    <>
+      <section className="hero-banner">
         <div>
-          <p className="section-label">Microsoft-Decision-1 · The live decision lab</p>
-          <h1>Small decisions. <span>Big consequences.</span></h1>
-          <p>{scenario.description || "Watch intent and risk change as a conversation unfolds. Compare structured decisions with a generative model on the same evolving input."}</p>
+          <p className="eyebrow">
+            01 · REAL-TIME WEBSOCKET STREAMING + SYSTEMONE DECISIONS
+          </p>
+          <h1>
+            Every new word, <strong>re-decided live.</strong>
+          </h1>
         </div>
-        <div className="story-launch">
-          <div className="story-sun" aria-hidden="true"><span /></div>
-          <button className="primary story-play" disabled={running || replayLoading} onClick={() => onPlayRecorded?.(scenarioId)}>{replayLoading ? "Loading recordings…" : "▶ Play recorded story"}</button>
-          <span>No sign-in · real recorded model results</span>
-        </div>
+        <p className="hero-copy">
+          As a customer or agent conversation streams in over WebSocket,{" "}
+          <b>Microsoft-Decision-1</b> (
+          <code>/providers/microsoft/v1/systemone</code>) re-evaluates every
+          typed question on every new word while racing <b>gpt-6.1-terra</b> in
+          parallel.
+        </p>
       </section>
 
-      <main className="layout split-6-6 runtime-stage">
+      <main className="layout split-6-6">
         {/* Left Column */}
-        <section className="card story-input-card">
+        <section className="card">
           <div className="card-head">
-            <span className="eyebrow">{isStory ? "01 · THE AGENT'S NEXT MOVE" : "01 · CONVERSATION"}</span>
+            <span className="eyebrow">01 · LIVE CONVERSATION STREAM</span>
             <div
               style={{
                 display: "flex",
@@ -560,7 +459,7 @@ export default function RuntimeView({
                 alignItems: "center",
               }}
             >
-              <div className="runtime-scenario-picker">
+              <div style={{ minWidth: 310 }}>
                 <CustomSelect
                   value={scenarioId}
                   disabled={running}
@@ -582,21 +481,17 @@ export default function RuntimeView({
                 />
               </div>
               <button
-                className="ghost runtime-live-check"
+                className="primary"
                 onClick={startStream}
                 disabled={!wsConnected}
               >
                 <span>
-                  {running ? "■ Stop" : replayMode ? "▶ Replay this story" : isStory ? "▶ Run live checks" : "▶ Stream Conversation"}
+                  {running ? "■ Stop Stream" : "▶ Stream Conversation"}
                 </span>
               </button>
             </div>
           </div>
-            <p className="story-provenance">{isStory ? "Scripted sandbox input · both models evaluate every checkpoint · no real refunds executed" : "Model-generated conversation · structured checks as the input changes"}</p>
-            {streamError && <p className="comparison-error" role="alert">{streamError}</p>}
-            {scenario.stages && <ol className="story-stage-track" aria-label="Story checkpoints">
-              {scenario.stages.map((stage, index) => <li key={stage.title} className={storyStage === index ? "current" : storyStage > index ? "complete" : ""} aria-current={storyStage === index ? "step" : undefined}><span>{index + 1}</span>{["Authorize", "Intercept", "Recover"][index]}</li>)}
-            </ol>}
+
           <div className="rt-stats" style={{ marginBottom: 10 }}>
             <span>
               <b>{wordCount}</b> words
@@ -607,10 +502,10 @@ export default function RuntimeView({
               {d1Avg ? `${d1Avg}ms avg` : "—"})
             </span>
             <span>·</span>
-            {showBaseline && <span className="terra-stat">
-              {comparisonModelName}: <b>{terraCalls}</b> calls (
+            <span className="terra-stat">
+              gpt-6.1-terra: <b>{terraCalls}</b> calls (
               {terraAvg ? `${terraAvg}ms avg` : "—"})
-            </span>}
+            </span>
             <span>·</span>
             <span>
               Mentions: <b>{exCalls}</b> ({exAvg ? `${exAvg}ms` : "—"})
@@ -621,8 +516,7 @@ export default function RuntimeView({
             {renderTranscriptTurns()}
           </div>
 
-          <details className="runtime-extra">
-          <summary>Extracted entities · {spans.length} spans</summary>
+          {/* 03 Mentions */}
           <div className="card-head sub">
             <span className="eyebrow">
               03 · LIVE ENTITY MENTIONS{" "}
@@ -672,38 +566,25 @@ export default function RuntimeView({
               );
             })}
           </div>
-          </details>
         </section>
 
         {/* Right Column */}
-        <section className="card runtime-signal-board">
-          {isStory && <div className={`action-gate ${gate}`} aria-live="polite">
-            <div className="gate-orbit" aria-hidden="true"><span>{gate === "allow" ? "✓" : gate === "block" ? "!" : "?"}</span></div>
-            <div>
-              <span className="gate-kicker">Decision-1 · suggested policy action</span>
-              <h2>{gate === "allow" ? "Ready to proceed." : gate === "block" ? "Catch it before it happens." : gate === "review" ? "Pause. Check the approval." : "Waiting for the next move."}</h2>
-              <p>{gate === "allow" ? "The current action matches Finance's approval." : gate === "block" ? "This action changes an approved amount or destination." : gate === "review" ? "The evidence does not meet the displayed approval rule." : "The script is input. The models make the judgement."}</p>
-              <span className="gate-tag">{gate === "waiting" ? "Awaiting evidence" : gate === "allow" ? "ALLOW · original payment method" : gate === "block" ? "BLOCK · unauthorized change" : "HOLD · human confirmation"}</span>
-              <span className="baseline-gate">{comparisonModelName}: {baselineGate === "waiting" ? "pending" : baselineGate === "review" ? "HOLD" : baselineGate.toUpperCase()}</span>
-            </div>
-          </div>}
+        <section className="card">
           <div className="card-head">
             <span className="eyebrow">
-              02 · MICROSOFT-DECISION-1 OUTPUT ·{" "}
+              02 · DECISIONS ·{" "}
               <span className="hint">
-                {questions.length} structured answers · {d1Avg ? `${d1Avg} ms average` : "awaiting model response"}
+                Microsoft-Decision-1 (solid) vs gpt-6.1-terra (dashed)
               </span>
             </span>
             <button
               className="ghost"
               onClick={() => setShowAddQ((v) => !v)}
-              disabled={running || replayMode}
-              title={replayMode ? "Switch to live mode to edit recorded questions" : undefined}
+              disabled={running}
             >
               + Question
             </button>
           </div>
-          <label className="baseline-toggle"><input type="checkbox" checked={showBaseline} onChange={(event) => setShowBaseline(event.target.checked)} /> Show the generative baseline comparison</label>
 
           {showAddQ && (
             <div
@@ -761,13 +642,12 @@ export default function RuntimeView({
               return (
                 <div
                   key={q.id}
-                  data-question={q.id}
                   className={`dq ${flippedKey === q.id ? "flip" : ""}`}
                 >
                   <div className="dq-head">
                     <span className="dq-label">{q.label}</span>
                     <span className={`dq-ans ${cls}`}>
-                      {answerLabel(q, d1Ans)}
+                      {d1Ans ? d1Ans.label : "…"}
                     </span>
                   </div>
 
@@ -784,23 +664,24 @@ export default function RuntimeView({
                   </div>
 
                   <div className="dq-foot">
-                    <span>{d1Ans ? q.type === "choice" ? `${Math.round(d1Ans.confidence * 100)}% confidence` : d1Ans.detail : "waiting"}</span>
+                    <span>{d1Ans ? d1Ans.detail : "waiting"}</span>
                     <span>D1: {d1LastMs ? `${d1LastMs}ms` : "—"}</span>
                   </div>
 
-                  {showBaseline && <div className="dq-terra-row">
+                  <div className="dq-terra-row">
                     <span>
-                      {comparisonModelName}: <b>{answerLabel(q, terraAns)}</b>
+                      gpt-6.1-terra: <b>{terraAns ? terraAns.label : "…"}</b>
                     </span>
                     <span>{terraLastMs ? `${terraLastMs}ms` : "—"}</span>
-                  </div>}
+                  </div>
+
                   <svg
                     className="spark"
                     viewBox="0 0 100 24"
                     preserveAspectRatio="none"
                   >
                     <line x1="0" y1="12" x2="100" y2="12" />
-                    {showBaseline && terraPoints && (
+                    {terraPoints && (
                       <polyline className="terra-line" points={terraPoints} />
                     )}
                     {d1Points && (
@@ -811,18 +692,13 @@ export default function RuntimeView({
               );
             })}
           </div>
-          {isStory && <details className="runtime-extra gate-rule">
-            <summary>Why this gate? Inspect the rule</summary>
-            <p>This is a suggested decision from application code, not an executed payment. Allow only when approval probability ≥ 70%, redirect probability ≤ 30%, and the model selects the original-method refund.</p>
-            <p>Boolean checks capture authorization and redirection; Choice recommends a route; Score assesses current action risk. A historical attack can remain detected even after the pending action is corrected.</p>
-          </details>}
 
           {/* Flipcast Banner */}
           <div className={`flipcast ${flipcast ? "show" : ""}`}>
             {!flipcast ? (
               <>
                 <span className="eyebrow">
-                  {isStory ? "WATCHING · CHECKPOINT EVALUATIONS" : "WATCHING · PROGRESSIVE EVALUATIONS"}
+                  WATCHING · RE-DECIDING EVERY WORD OVER WEBSOCKET
                 </span>
                 <div
                   style={{
@@ -831,7 +707,9 @@ export default function RuntimeView({
                     marginTop: 6,
                   }}
                 >
-                  {isStory ? "Signals reset at each new action. Previous approval must not authorize a changed payment." : "Changes in model answers are announced here and pinned in the transcript."}
+                  Each question starts uncertain. The instant a single new word
+                  flips <b>Microsoft-Decision-1</b>, it is announced here and
+                  pinned inside the transcript.
                 </div>
               </>
             ) : (
@@ -850,8 +728,7 @@ export default function RuntimeView({
             )}
           </div>
 
-          <details className="runtime-extra">
-          <summary>Decision changes · {moments.length} moments</summary>
+          {/* Moments Timeline */}
           <div className="card-head sub">
             <span className="eyebrow">
               MOMENTS WHEN MICROSOFT-DECISION-1 CHANGED ITS MIND
@@ -874,40 +751,31 @@ export default function RuntimeView({
               ))}
             </ol>
           )}
-          </details>
 
-          <details className="runtime-extra" open={streamDone}>
-          <summary>{streamDone ? "Story complete · observed results" : "How this demo works"}</summary>
-          {!streamDone && <p>{isStory ? "Three scripted checkpoints isolate authorization, a tool-output attack, and fresh approval. The model answers are not scripted. Use Compare to verify the safe and unsafe cases against ground truth." : "A generated conversation is evaluated as it develops. Signal curves show model answers, not a guarantee of overall accuracy."}</p>}
+          {/* Script Reveal & Verdict */}
           {streamDone && pickInfo && (
             <div className="reveal">
               <div className="verdict-big">
                 Stream Complete ·{" "}
                 {d1Avg && terraAvg
-                  ? `Decision-1 averaged ${d1Avg}ms vs ${terraAvg}ms on ${comparisonModelName} (${(
+                  ? `Decision-1 averaged ${d1Avg}ms vs ${terraAvg}ms on gpt-6.1-terra (${(
                       terraAvg / Math.max(1, d1Avg)
-                    ).toFixed(1)}× time ratio)`
-                  : `Decision-1 completed ${d1Calls} evaluations`}
+                    ).toFixed(1)}× faster)`
+                  : `Decision-1 completed ${d1Calls} live evaluations`}
               </div>
               <span className="eyebrow">
-                {isStory ? "SCRIPTED INPUT · MEASURED MODEL RESULTS" : "THE SCRIPT · RANDOM TWIST & ENDING"}
+                THE SCRIPT · RANDOM TWIST & ENDING GIVEN TO GPT-6.1-TERRA
               </span>
               <p style={{ margin: "6px 0 4px" }}>
-                <b>{isStory ? "What changed:" : "Mid-call twist:"}</b> {isStory ? "A tool output tried to change $75 on the original card into $750 to an external bank." : pickInfo.pick?.twist}
+                <b>Mid-call twist:</b> {pickInfo.pick?.twist}
               </p>
               <p style={{ margin: 0 }}>
-                <b>{isStory ? "Recovery:" : "Hidden ending:"}</b> {pickInfo.ending?.text}
+                <b>Hidden ending:</b> {pickInfo.ending?.text}
               </p>
             </div>
           )}
-          </details>
         </section>
       </main>
-      <section className="demo-paths" aria-label="Explore the next capability">
-        <button className="demo-path lavender" onClick={() => onOpenWorkbench?.()}><span>01 / Prove the answer</span><strong>Safe input. Unsafe input.</strong><small>Same questions, paired ground truth &rarr;</small></button>
-        <button className="demo-path pistachio" onClick={onOpenTriage}><span>02 / Increase the pressure</span><strong>40 messages. Two queues.</strong><small>See where slower decisions add delay &rarr;</small></button>
-        <button className="demo-path apricot" disabled={running} onClick={() => onPlayRecorded?.("agent-supervisor")}><span>03 / Supervise an agent</span><strong>Done is not the same as verified.</strong><small>Watch for unsafe work and missing tests &rarr;</small></button>
-      </section>
-    </div>
+    </>
   );
 }

@@ -1,22 +1,46 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   STUDIO_SAMPLES,
-  type StudioSample,
-  type DecisionQuestion,
-  type QuestionType,
+  StudioSample,
+  DecisionQuestion,
+  QuestionType,
   computeCorrectnessSummary,
   computeUseCaseEconomics,
   getScenarioNarrative,
 } from "@/lib/demo-data";
 import type { DecisionRunResult } from "@/lib/foundry";
 import { CustomSelect } from "./CustomSelect";
-import { Dialog } from "./Dialog";
+
+function buildClientSystemOnePayload(
+  state: unknown,
+  questions: DecisionQuestion[],
+  deploymentName = "Decision-1"
+) {
+  const qMap: Record<string, Record<string, unknown>> = {};
+  for (const q of questions) {
+    const entry: Record<string, unknown> = {
+      type: q.type,
+      instructions: q.instructions,
+    };
+    if (q.criteria) {
+      entry.criteria = q.criteria;
+    }
+    qMap[q.id] = entry;
+  }
+  return {
+    model: deploymentName,
+    state,
+    questions: qMap,
+  };
+}
 
 interface StudioCompareViewProps {
   sendWs: (action: string, payload?: Record<string, any>) => boolean;
-  subscribeWs: (handler: (msg: { event: string; data: any; ts: number }) => void) => () => void;
+  subscribeWs: (
+    handler: (msg: { event: string; data: any; ts: number }) => void
+  ) => () => void;
   wsConnected: boolean;
   comparisonModelName?: string;
   endpointUrl?: string;
@@ -24,320 +48,1458 @@ interface StudioCompareViewProps {
   externalSample?: StudioSample | null;
   externalTrigger?: number;
   onOpenFramework?: () => void;
-  onOpenSettings?: () => void;
-  replayMode?: boolean;
 }
 
 export default function StudioCompareView({
-  sendWs, subscribeWs, wsConnected,
+  sendWs,
+  subscribeWs,
+  wsConnected,
   comparisonModelName = "gpt-6.1-terra",
   endpointUrl = "https://icsuaaisea.cognitiveservices.azure.com",
-  allUseCases, externalSample, externalTrigger, onOpenFramework, onOpenSettings, replayMode = false,
+  allUseCases,
+  externalSample,
+  externalTrigger,
+  onOpenFramework,
 }: StudioCompareViewProps) {
-  const samples = allUseCases?.length ? allUseCases : STUDIO_SAMPLES;
+  const samples =
+    allUseCases && allUseCases.length > 0 ? allUseCases : STUDIO_SAMPLES;
   const [sampleId, setSampleId] = useState(samples[0].id);
   const [activeCaseIndex, setActiveCaseIndex] = useState(0);
-  const [stateText, setStateText] = useState(samples[0].testCases?.[0]?.content || samples[0].content);
-  const [questions, setQuestions] = useState<DecisionQuestion[]>([...samples[0].questions]);
+  const [sidebarSearch, setSidebarSearch] = useState("");
+  const [stateText, setStateText] = useState(
+    samples[0].testCases?.[0]?.content || samples[0].content
+  );
+  const [questions, setQuestions] = useState<DecisionQuestion[]>(() => [
+    ...samples[0].questions,
+  ]);
   const [schemaModalOpen, setSchemaModalOpen] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [outTab, setOutTab] = useState<"metrics" | "visual" | "probs" | "api">("metrics");
+
+  const activeSample = samples.find((s) => s.id === sampleId) || samples[0];
+  const activeTestCase =
+    activeSample.testCases && activeSample.testCases[activeCaseIndex]
+      ? activeSample.testCases[activeCaseIndex]
+      : undefined;
+  const activeExpected = activeTestCase?.expected || activeSample.expected;
+  const activeVerdict =
+    activeTestCase?.expectedGateVerdict || activeSample.expectedGateVerdict;
+  const narrative = useMemo(
+    () => getScenarioNarrative(activeSample),
+    [activeSample]
+  );
+
+  const [outTab, setOutTab] = useState<
+    "table" | "visual" | "probs" | "api"
+  >("table");
   const [racing, setRacing] = useState(false);
   const [d1Result, setD1Result] = useState<DecisionRunResult | null>(null);
-  const [terraResult, setTerraResult] = useState<DecisionRunResult | null>(null);
-  const [error, setError] = useState("");
-  const [edited, setEdited] = useState(false);
+  const [terraResult, setTerraResult] = useState<DecisionRunResult | null>(
+    null
+  );
+
   const [newKey, setNewKey] = useState("");
   const [newType, setNewType] = useState<QuestionType>("noul");
   const [newInst, setNewInst] = useState("");
   const [newCriteriaText, setNewCriteriaText] = useState("");
-  const lastExternalTrigger = useRef(0);
 
-  const activeSample = samples.find((s) => s.id === sampleId) || samples[0];
-  const activeTestCase = activeSample.testCases?.[activeCaseIndex];
-  const activeExpected = edited ? undefined : activeTestCase?.expected || activeSample.expected;
-  const expectedCount = questions.filter((question) => activeExpected?.[question.id]).length;
-  const narrative = getScenarioNarrative(activeSample);
-  const shortTitle = (sample: StudioSample) => sample.label.split("·").pop()!.trim();
-
-  useEffect(() => subscribeWs(({ event, data }) => {
-    if (event === "compare_started") {
-      setRacing(true);
-      setD1Result(null);
-      setTerraResult(null);
-      setError("");
-    } else if (event === "compare_model_done") {
-      if (data.error || data.result?.error) {
-        setError((previous) => [previous, `${data.tier === "decision1" ? "Decision-1" : comparisonModelName}: ${data.error || data.result.error}`].filter(Boolean).join(" "));
+  useEffect(() => {
+    return subscribeWs(({ event, data }) => {
+      if (event === "compare_started") {
+        setRacing(true);
+        setD1Result(null);
+        setTerraResult(null);
+      } else if (event === "compare_model_done") {
+        if (data.tier === "decision1") {
+          setD1Result(data.result);
+        } else if (data.tier === "terra") {
+          setTerraResult(data.result);
+        }
+      } else if (event === "compare_finished") {
+        setRacing(false);
       }
-      if (data.tier === "decision1") setD1Result(data.result || null);
-      if (data.tier === "terra") setTerraResult(data.result || null);
-    } else if (event === "compare_finished") {
-      setRacing(false);
-    } else if (event === "error") {
-      setError(data.message || data.error || "Evaluation failed. Check your connection settings.");
-      setRacing(false);
-    }
-  }), [subscribeWs, comparisonModelName]);
+    });
+  }, [subscribeWs]);
 
+  const [didInitialRun, setDidInitialRun] = useState(false);
   useEffect(() => {
-    if (!wsConnected) setRacing(false);
-  }, [wsConnected]);
+    if (wsConnected && !didInitialRun) {
+      setDidInitialRun(true);
+      const firstContent =
+        STUDIO_SAMPLES[0].testCases?.[0]?.content || STUDIO_SAMPLES[0].content;
+      sendWs("run_compare", {
+        state: firstContent,
+        questions: STUDIO_SAMPLES[0].questions,
+        mode: "compare",
+      });
+    }
+  }, [wsConnected, didInitialRun, sendWs]);
 
-  const clearResults = () => {
-    setD1Result(null);
-    setTerraResult(null);
-    setError("");
-  };
-  const loadSample = (sample: StudioSample) => {
-    setSampleId(sample.id);
+  const selectSample = (id: string) => {
+    setSampleId(id);
     setActiveCaseIndex(0);
-    setStateText(sample.testCases?.[0]?.content || sample.content);
-    setQuestions([...sample.questions]);
-    setEdited(false);
-    clearResults();
-  };
-  useEffect(() => {
-    if (!racing && externalSample && externalTrigger && externalTrigger !== lastExternalTrigger.current) {
-      lastExternalTrigger.current = externalTrigger;
-      loadSample(externalSample);
+    const s = samples.find((x) => x.id === id);
+    if (s) {
+      const initialContent = s.testCases?.[0]?.content || s.content;
+      setStateText(initialContent);
+      setQuestions([...s.questions]);
+      if (wsConnected) {
+        sendWs("run_compare", {
+          state: initialContent,
+          questions: s.questions,
+          mode: "compare",
+        });
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [externalSample, externalTrigger, racing]);
+  };
 
-  const selectTestCase = (index: number) => {
-    const testCase = activeSample.testCases?.[index];
-    if (!testCase) return;
-    setActiveCaseIndex(index);
-    setStateText(testCase.content);
-    setQuestions([...activeSample.questions]);
-    setEdited(false);
-    clearResults();
+  const selectTestCase = (idx: number) => {
+    setActiveCaseIndex(idx);
+    const tc = activeSample.testCases?.[idx];
+    if (tc) {
+      setStateText(tc.content);
+      if (wsConnected) {
+        sendWs("run_compare", {
+          state: tc.content,
+          questions,
+          mode: "compare",
+        });
+      }
+    }
   };
+
+  useEffect(() => {
+    if (externalSample && externalTrigger) {
+      setSampleId(externalSample.id);
+      setActiveCaseIndex(0);
+      const initialContent =
+        externalSample.testCases?.[0]?.content || externalSample.content;
+      setStateText(initialContent);
+      setQuestions([...externalSample.questions]);
+      if (wsConnected) {
+        sendWs("run_compare", {
+          state: initialContent,
+          questions: externalSample.questions,
+          mode: "compare",
+        });
+      }
+    }
+  }, [externalSample, externalTrigger, wsConnected, sendWs]);
+
   const runComparison = () => {
-    if (!wsConnected || racing || !questions.length || !stateText.trim()) return;
-    clearResults();
-    setRacing(true);
-    if (!sendWs("run_compare", { state: stateText, questions, mode: "compare" })) {
-      setRacing(false);
-      setError(replayMode ? "No recording matches this input or question set. Choose a recorded test case or return to live mode." : "Not connected. Open connection settings to continue.");
-    }
+    if (!wsConnected) return;
+    sendWs("run_compare", {
+      state: stateText,
+      questions,
+      mode: "compare",
+    });
   };
-  const markEdited = () => {
-    setEdited(true);
-    clearResults();
+
+  const removeQuestion = (id: string) => {
+    setQuestions((prev) => prev.filter((q) => q.id !== id));
   };
+
   const addQuestion = () => {
-    const id = (newKey || newInst).trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 28);
-    if (!id || !newInst.trim() || questions.some((q) => q.id === id)) return;
-    const question: DecisionQuestion = { id, label: newKey.trim() || newInst.trim().slice(0, 32), type: newType, instructions: newInst.trim() };
-    const parts = newCriteriaText.split(",").map((part) => part.trim()).filter(Boolean);
+    const cleanId = (newKey || newInst)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "")
+      .slice(0, 28);
+    if (!cleanId || !newInst.trim()) return;
+
+    const q: DecisionQuestion = {
+      id: cleanId,
+      label: newKey.trim() || newInst.trim().slice(0, 32),
+      type: newType,
+      instructions: newInst.trim(),
+    };
+
     if (newType === "choice") {
-      question.criteria = Object.fromEntries((parts.length ? parts : ["option_a", "option_b"]).map((part) => {
-        const [key, description] = part.split(":").map((value) => value.trim());
-        return [key, description || `Select when ${key} applies.`];
-      }));
+      const parts = newCriteriaText
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const crit: Record<string, string> = {};
+      (parts.length ? parts : ["option_a", "option_b"]).forEach((p) => {
+        const [k, desc] = p.split(":").map((x) => x.trim());
+        crit[k] = desc || `Select when ${k} applies.`;
+      });
+      q.criteria = crit;
     } else if (newType === "score") {
-      question.criteria = parts.length ? parts : ["Low", "Medium", "High", "Critical"];
+      const parts = newCriteriaText
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      q.criteria = parts.length ? parts : ["Low", "Medium", "High", "Critical"];
     }
-    setQuestions((previous) => [...previous, question]);
+
+    setQuestions((prev) => [...prev, q]);
     setNewKey("");
     setNewInst("");
     setNewCriteriaText("");
-    markEdited();
   };
 
-  const correctness = useMemo(() => computeCorrectnessSummary(
-    questions, activeExpected, d1Result?.answers, terraResult?.answers,
-  ), [questions, activeExpected, d1Result, terraResult]);
-  const economics = computeUseCaseEconomics(
-    { ...activeSample, content: stateText, questions }, d1Result?.usage, terraResult?.usage,
-  );
+  // Group scenarios by industry for the left sidebar
+  const groupedScenarios = useMemo(() => {
+    const q = sidebarSearch.trim().toLowerCase();
+    const filtered = samples.filter(
+      (s) =>
+        !q ||
+        s.label.toLowerCase().includes(q) ||
+        (s.industry || "").toLowerCase().includes(q) ||
+        s.category.toLowerCase().includes(q)
+    );
+    const groups = new Map<string, StudioSample[]>();
+    for (const s of filtered) {
+      const ind = s.industry || "Enterprise Core";
+      if (!groups.has(ind)) groups.set(ind, []);
+      groups.get(ind)!.push(s);
+    }
+    return Array.from(groups.entries());
+  }, [samples, sidebarSearch]);
+
   const d1Ms = d1Result?.latency_ms || 0;
   const terraMs = terraResult?.latency_ms || 0;
-  const speedup = d1Ms && terraMs ? (terraMs / d1Ms).toFixed(1) : null;
-  const hasResults = Boolean(d1Result || terraResult);
-  const payload = {
-    model: "Decision-1", state: stateText,
-    questions: Object.fromEntries(questions.map((q) => [q.id, { type: q.type, instructions: q.instructions, ...(q.criteria ? { criteria: q.criteria } : {}) }])),
-  };
-  const curl = `curl --request POST \\
+  const maxMs = Math.max(d1Ms, terraMs, 1);
+  const speedup =
+    d1Ms > 0 && terraMs > 0 ? (terraMs / d1Ms).toFixed(1) : null;
+
+  let agreedCount = 0;
+  let comparedCount = 0;
+  if (d1Result?.answers && terraResult?.answers) {
+    for (const q of questions) {
+      const a = d1Result.answers[q.id];
+      const b = terraResult.answers[q.id];
+      if (a && b) {
+        comparedCount++;
+        if (a.label.toLowerCase() === b.label.toLowerCase()) {
+          agreedCount++;
+        }
+      }
+    }
+  }
+
+  const correctnessSummary = useMemo(
+    () =>
+      computeCorrectnessSummary(
+        questions,
+        activeExpected,
+        d1Result?.answers,
+        terraResult?.answers
+      ),
+    [questions, activeExpected, d1Result?.answers, terraResult?.answers]
+  );
+
+  const economicsSummary = useMemo(
+    () =>
+      computeUseCaseEconomics(
+        {
+          id: activeSample.id,
+          content: stateText,
+          questions,
+          estimatedDailyVolume: activeSample.estimatedDailyVolume,
+        },
+        d1Result?.usage,
+        terraResult?.usage
+      ),
+    [
+      activeSample.id,
+      activeSample.estimatedDailyVolume,
+      stateText,
+      questions,
+      d1Result?.usage,
+      terraResult?.usage,
+    ]
+  );
+
+  const systemOnePayload = buildClientSystemOnePayload(stateText, questions);
+
+  const curlSnippet = `curl --request POST \\
   --url "${endpointUrl}/providers/microsoft/v1/systemone" \\
   --header "Authorization: Bearer $(az account get-access-token --resource https://cognitiveservices.azure.com --query accessToken -o tsv)" \\
   --header "Content-Type: application/json" \\
-  --data '${JSON.stringify(payload, null, 2).replace(/'/g, "'\\''")}'`;
+  --data '${JSON.stringify(systemOnePayload, null, 2).replace(/'/g, "'\\''")}'`;
 
   return (
-    <main id="main-content" className="decision-page">
-      <div className="scenario-picker-row">
-        <div className="scenario-picker">
-          <span className="step-label">01 / Choose a scenario</span>
-          <CustomSelect
-            value={activeSample.id}
-            onChange={(id) => { const sample = samples.find((s) => s.id === id); if (sample) loadSample(sample); }}
-            disabled={racing}
-            minWidth={0}
-            searchable
-            options={samples.map((sample) => ({ value: sample.id, label: shortTitle(sample), category: sample.industry, description: sample.category }))}
-          />
-        </div>
-        <button className="text-button" onClick={onOpenFramework}>Browse all solutions &rarr;</button>
-      </div>
-
-      <header className="scenario-heading">
-        <span className="section-label">{activeSample.industry || "Your solution"}</span>
-        <h1>{shortTitle(activeSample)}</h1>
-        <p>{narrative.problemSolved}</p>
-        <details className="purpose-disclosure" key={activeSample.id}>
-          <summary>What does this scenario demonstrate?</summary>
-          <div className="purpose-content">
-            <p><strong>Capability being tested</strong>{narrative.whatItProves}</p>
-            <p><strong>How to read the result</strong>Both models answer the same {questions.length} questions. Compare their answers with the expected labels, then inspect response time and estimated cost. Accuracy here applies to this test case, not the whole model.</p>
-          </div>
-        </details>
-      </header>
-
-      <div className="comparison-stage">
-        <section className="input-pane" aria-label="Test input">
-          <div className="pane-heading">
-            <h2><span className="step-label">02 /</span> Test input</h2>
-            <button className="text-button" disabled={racing} onClick={() => setSchemaModalOpen(true)}>Edit input &amp; questions</button>
-          </div>
-          <div className="input-case-tabs" aria-label="Test cases">
-            {activeSample.testCases?.map((testCase, index) => (
-              <button
-                key={testCase.id}
-                className={`input-case-tab ${index === activeCaseIndex ? "active" : ""}`}
-                aria-pressed={index === activeCaseIndex}
-                disabled={racing}
-                onClick={() => selectTestCase(index)}
-                title={testCase.title}
+    <main className="layout single">
+      <div className="wb-shell">
+        {/* LEFT SIDEBAR: Scenario Navigator */}
+        <aside className="wb-sidebar" aria-label="Scenario Navigator">
+          <div className="wb-sidebar-head">
+            <div>
+              <div
+                style={{
+                  font: "700 11px var(--mono)",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                }}
               >
-                {activeSample.testCases!.length === 1 ? "Primary case" : testCase.scenarioType === "violation" ? "High-risk case" : "Safe case"}
+                Scenarios ({samples.length})
+              </div>
+              <div style={{ fontSize: 11.5, color: "var(--text-muted)" }}>
+                Select an enterprise use case
+              </div>
+            </div>
+            {onOpenFramework && (
+              <button
+                type="button"
+                className="ghost"
+                style={{ padding: "4px 8px", fontSize: 11 }}
+                onClick={onOpenFramework}
+                title="Open Industry Catalog & Custom Scenario Builder"
+              >
+                Catalog / +New
               </button>
+            )}
+          </div>
+
+          <div
+            style={{
+              padding: "8px 10px",
+              borderBottom: "1px solid var(--border-soft)",
+            }}
+          >
+            <input
+              type="text"
+              placeholder="Filter scenarios or industry…"
+              value={sidebarSearch}
+              onChange={(e) => setSidebarSearch(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 9px",
+                fontSize: 12,
+              }}
+            />
+          </div>
+
+          <div className="wb-sidebar-list">
+            {groupedScenarios.map(([industry, list]) => (
+              <div key={industry}>
+                <div className="wb-industry-group-label">{industry}</div>
+                {list.map((s) => {
+                  const isActive = s.id === activeSample.id;
+                  const shortTitle = s.label.includes("·")
+                    ? s.label.split("·").slice(1).join("·").trim()
+                    : s.label;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className={`wb-nav-item ${isActive ? "active" : ""}`}
+                      onClick={() => selectSample(s.id)}
+                    >
+                      <span className="wb-nav-item-title">{shortTitle}</span>
+                      <span className="wb-nav-item-meta">
+                        <span>{s.category}</span>
+                        <span>{s.questions.length}Q</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             ))}
           </div>
-          <p className="case-caption">{edited ? "Custom input · expected labels are not verified" : activeTestCase?.title || "Default input"}</p>
-          <div className="input-document" tabIndex={0}>{stateText}</div>
-          <div className="run-actions">
-            <button className="primary compare-button" disabled={racing || !wsConnected || !questions.length || !stateText.trim()} onClick={runComparison}>
-              {racing ? replayMode ? "Replaying comparison…" : "Comparing models…" : replayMode ? "Replay comparison" : "Compare models"} {!racing && <span aria-hidden="true">&rarr;</span>}
-            </button>
-            <span>{questions.length} questions · {replayMode ? "recorded results, no model calls" : "runs only when requested"}</span>
-          </div>
-          {!wsConnected && <button className="connection-prompt" onClick={onOpenSettings}>Set up a connection to run this test &rarr;</button>}
-        </section>
+        </aside>
 
-        <section className="results-pane" aria-label="Comparison results" aria-busy={racing}>
-          <div className="pane-heading">
-            <h2><span className="step-label">03 /</span> Compare the decisions</h2>
-            {hasResults && <button className="text-button" onClick={() => setDetailsOpen(true)}>Inspect details &rarr;</button>}
-          </div>
-          {error && <p role="alert" className="comparison-error">{error}</p>}
-          {!hasResults && !racing ? (
-            <div className="result-empty">
-              <span className="empty-rule" />
-              <h3>Same input. Two approaches.</h3>
-              <p>Run a comparison to see Microsoft-Decision-1 and {comparisonModelName} answer the same questions.</p>
-              <div className="empty-legend"><span>Decision-1</span><span>{comparisonModelName}</span></div>
-              <p className="empty-note">Check the decisions first. Speed and cost follow.</p>
-            </div>
-          ) : (
-            <>
-              <div className="result-summary" role="status">
-                <div><span>Response time</span><strong>{speedup ? `${speedup}×` : racing ? "Comparing…" : "—"}</strong><small>{speedup ? "baseline time / Decision-1 time" : "Waiting for both models"}</small></div>
-                <div><span>Expected labels matched</span><strong>{d1Result && expectedCount ? `${correctness.d1Correct}/${expectedCount}` : "—"}</strong><small>{expectedCount ? "Decision-1 · this test case" : "No ground truth set"}</small></div>
-                <div><span>Cost / 1,000 calls</span><strong>${economics.d1CostPer1kUsd.toFixed(4)}</strong><small>Decision-1 · {d1Result?.usage?.input_tokens ? "usage-based" : "estimated"}</small></div>
+        {/* RIGHT MAIN STAGE: Clear 3-Tier Visual Hierarchy */}
+        <div className="wb-main">
+          {/* TIER 1: Scenario Brief (What Problem It Solves & What It Proves) + Test Case Input */}
+          <section className="wb-brief-card">
+            <div className="wb-brief-top">
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 4,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span
+                    style={{
+                      font: "600 10.5px var(--mono)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      color: "var(--primary)",
+                    }}
+                  >
+                    {activeSample.industry || "Enterprise"} ·{" "}
+                    {activeSample.category}
+                  </span>
+                  {activeVerdict && (
+                    <span
+                      style={{
+                        font: "600 10px var(--mono)",
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                        background:
+                          activeTestCase?.scenarioType === "violation"
+                            ? "var(--danger-soft)"
+                            : "var(--primary-soft)",
+                        color:
+                          activeTestCase?.scenarioType === "violation"
+                            ? "var(--danger)"
+                            : "var(--primary)",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      Expected Verdict: {activeVerdict}
+                    </span>
+                  )}
+                </div>
+                <h1
+                  style={{
+                    margin: 0,
+                    fontSize: "clamp(18px, 1.8vw, 23px)",
+                    fontWeight: 700,
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  {activeSample.label}
+                </h1>
               </div>
-              <div className="answer-grid">
-                <div className="answer-grid-head"><span>Question / expected</span><span>Decision-1<small>{d1Ms ? `${d1Ms} ms` : "Evaluating…"}</small></span><span>{comparisonModelName}<small>{terraMs ? `${terraMs} ms` : "Evaluating…"}</small></span></div>
-                {questions.map((question) => {
-                  const row = correctness.rows.find((item) => item.questionId === question.id);
+
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setSchemaModalOpen(true)}
+                >
+                  Customize Input &amp; Questions ({questions.length})
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={runComparison}
+                  disabled={racing || !wsConnected}
+                >
+                  {racing
+                    ? "Evaluating Live…"
+                    : `Run Live Evaluation`}
+                </button>
+              </div>
+            </div>
+
+            {/* 2-Column Editorial Explanation: Problem Solved vs What It Proves */}
+            <div className="wb-purpose-grid">
+              <div className="wb-purpose-cell">
+                <div
+                  className="wb-purpose-kicker"
+                  style={{ color: "var(--terra)" }}
+                >
+                  <span>01 · Business Problem Solved (解决什么业务问题)</span>
+                </div>
+                <p className="wb-purpose-body">{narrative.problemSolved}</p>
+              </div>
+              <div className="wb-purpose-cell">
+                <div
+                  className="wb-purpose-kicker"
+                  style={{ color: "var(--primary)" }}
+                >
+                  <span>
+                    02 · What This Proves About Microsoft-Decision-1 (证明什么能力)
+                  </span>
+                </div>
+                <p className="wb-purpose-body">{narrative.whatItProves}</p>
+              </div>
+            </div>
+
+            {/* Test Case Selector + Clean Read-First Document View */}
+            <div className="wb-input-section">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 10,
+                  marginBottom: 10,
+                }}
+              >
+                <div className="wb-case-tabs">
+                  <span
+                    style={{
+                      font: "600 10.5px var(--mono)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      color: "var(--text-muted)",
+                      marginRight: 4,
+                    }}
+                  >
+                    Benchmark Test Case:
+                  </span>
+                  {activeSample.testCases &&
+                  activeSample.testCases.length > 0 ? (
+                    activeSample.testCases.map((tc, idx) => {
+                      const active = activeCaseIndex === idx;
+                      const isViolation = tc.scenarioType === "violation";
+                      return (
+                        <button
+                          key={tc.id}
+                          type="button"
+                          className={`wb-case-tab ${active ? "active" : ""}`}
+                          onClick={() => selectTestCase(idx)}
+                        >
+                          <span
+                            className="dot"
+                            style={{
+                              background: isViolation
+                                ? "var(--danger)"
+                                : "var(--primary)",
+                            }}
+                          />
+                          <span>{tc.title}</span>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      Default Input Document
+                    </span>
+                  )}
+                </div>
+
+                <span
+                  style={{
+                    font: "500 11px var(--mono)",
+                    color: "var(--text-dim)",
+                  }}
+                >
+                  {questions.filter((q) => q.type === "noul").length} noul ·{" "}
+                  {questions.filter((q) => q.type === "choice").length} choice ·{" "}
+                  {questions.filter((q) => q.type === "score").length} score
+                </span>
+              </div>
+
+              <div
+                style={{
+                  background: "var(--bg-input)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "12px 14px",
+                  font: "12.5px/1.6 var(--mono)",
+                  color: "var(--text)",
+                  whiteSpace: "pre-wrap",
+                  maxHeight: 155,
+                  overflowY: "auto",
+                }}
+              >
+                {stateText}
+              </div>
+            </div>
+          </section>
+
+          {/* TIER 2: 3-Pillar Executive Proof Scoreboard (Speed, Correctness, Economics) */}
+          <section
+            className="wb-proof-strip"
+            aria-label="Executive Proof Metrics"
+          >
+            {/* Pillar 1: Latency */}
+            <div className="wb-proof-cell">
+              <div className="wb-proof-label">
+                <span>01 · Latency Speedup</span>
+                <span>Single Forward Pass</span>
+              </div>
+              <div className="wb-proof-main">
+                <span className="wb-proof-hero accent">
+                  {speedup ? `${speedup}×` : racing ? "…" : "—"}
+                </span>
+                <div style={{ textAlign: "right", font: "500 11.5px var(--mono)" }}>
+                  <div style={{ color: "var(--primary)", fontWeight: 700 }}>
+                    Decision-1: {d1Ms ? `${d1Ms} ms` : racing ? "running…" : "—"}
+                  </div>
+                  <div style={{ color: "var(--terra)" }}>
+                    {comparisonModelName}:{" "}
+                    {terraMs ? `${terraMs} ms` : racing ? "running…" : "—"}
+                  </div>
+                </div>
+              </div>
+              <div className="wb-proof-sub">
+                <span>Zero autoregressive generation</span>
+                <span>
+                  {d1Ms && terraMs
+                    ? `Saved ${terraMs - d1Ms} ms / call`
+                    : "Ready"}
+                </span>
+              </div>
+            </div>
+
+            {/* Pillar 2: Ground-Truth Correctness */}
+            <div className="wb-proof-cell">
+              <div className="wb-proof-label">
+                <span>02 · Ground-Truth Accuracy</span>
+                <span>Verified Policy Answers</span>
+              </div>
+              <div className="wb-proof-main">
+                <span className="wb-proof-hero accent">
+                  {d1Result && correctnessSummary.totalQuestions > 0
+                    ? `${correctnessSummary.d1AccuracyPct}%`
+                    : racing
+                    ? "…"
+                    : "—"}
+                </span>
+                <div style={{ textAlign: "right", font: "500 11.5px var(--mono)" }}>
+                  <div style={{ color: "var(--primary)", fontWeight: 700 }}>
+                    Decision-1:{" "}
+                    {d1Result && correctnessSummary.totalQuestions > 0
+                      ? `${correctnessSummary.d1Correct}/${correctnessSummary.totalQuestions} pass`
+                      : "—"}
+                  </div>
+                  <div style={{ color: "var(--terra)" }}>
+                    {comparisonModelName}:{" "}
+                    {terraResult && correctnessSummary.totalQuestions > 0
+                      ? `${correctnessSummary.terraCorrect}/${correctnessSummary.totalQuestions} (${correctnessSummary.terraAccuracyPct}%)`
+                      : "—"}
+                  </div>
+                </div>
+              </div>
+              <div className="wb-proof-sub">
+                <span>
+                  Avg Confidence: {correctnessSummary.d1AvgConfidencePct}%
+                </span>
+                <span>
+                  Model Agreement:{" "}
+                  {comparedCount > 0
+                    ? `${agreedCount}/${comparedCount} (${Math.round(
+                        (agreedCount / comparedCount) * 100
+                      )}%)`
+                    : "—"}
+                </span>
+              </div>
+            </div>
+
+            {/* Pillar 3: Production Economics */}
+            <div className="wb-proof-cell">
+              <div className="wb-proof-label">
+                <span>03 · Production Economics</span>
+                <span>$0.042/1M In · $0 Out</span>
+              </div>
+              <div className="wb-proof-main">
+                <span className="wb-proof-hero accent">
+                  {economicsSummary.savingsPct}%{" "}
+                  <small style={{ fontSize: 13, fontWeight: 600 }}>saved</small>
+                </span>
+                <div style={{ textAlign: "right", font: "500 11.5px var(--mono)" }}>
+                  <div style={{ color: "var(--primary)", fontWeight: 700 }}>
+                    Decision-1: ${economicsSummary.d1CostPer1kUsd.toFixed(4)} /
+                    1k
+                  </div>
+                  <div style={{ color: "var(--terra)" }}>
+                    {comparisonModelName}: $
+                    {economicsSummary.terraCostPer1kUsd.toFixed(3)} / 1k
+                  </div>
+                </div>
+              </div>
+              <div className="wb-proof-sub">
+                <span>{economicsSummary.costMultiplier}× lower cost</span>
+                <span>
+                  Saves $
+                  {economicsSummary.monthlySavingsUsd.toLocaleString("en-US", {
+                    maximumFractionDigits: 0,
+                  })}
+                  /mo @ {(economicsSummary.dailyVolume / 1000).toFixed(0)}k/day
+                </span>
+              </div>
+            </div>
+          </section>
+
+          {/* TIER 3: Unified Criterion Verification Table & Secondary Views */}
+          <section className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <div
+              style={{
+                padding: "14px 20px",
+                borderBottom: "1px solid var(--border)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 12,
+                background: "var(--bg-card)",
+              }}
+            >
+              <div>
+                <span className="eyebrow">
+                  03 · CRITERION-BY-CRITERION VERIFICATION
+                </span>
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    color: "var(--text-muted)",
+                    marginTop: 2,
+                  }}
+                >
+                  Calibrated System-1 probabilities vs. generative LLM outputs
+                  verified against ground truth
+                </div>
+              </div>
+
+              <div className="nav-tabs">
+                <button
+                  type="button"
+                  className={`nav-tab ${outTab === "table" ? "active" : ""}`}
+                  onClick={() => setOutTab("table")}
+                >
+                  Verification Table
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab ${outTab === "visual" ? "active" : ""}`}
+                  onClick={() => setOutTab("visual")}
+                >
+                  Side-by-Side Meters
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab ${outTab === "probs" ? "active" : ""}`}
+                  onClick={() => setOutTab("probs")}
+                >
+                  Probability Distribution
+                </button>
+                <button
+                  type="button"
+                  className={`nav-tab ${outTab === "api" ? "active" : ""}`}
+                  onClick={() => setOutTab("api")}
+                >
+                  API Payload &amp; cURL
+                </button>
+              </div>
+            </div>
+
+            {/* DEFAULT VIEW: Clean Scannable Verification Table */}
+            {outTab === "table" && (
+              <div className="wb-table-wrap">
+                <table className="wb-table">
+                  <thead>
+                    <tr>
+                      <th>Criterion / Question</th>
+                      <th>Type</th>
+                      <th>Expected Ground Truth</th>
+                      <th>Microsoft-Decision-1 (Calibrated)</th>
+                      <th>{comparisonModelName} (Baseline)</th>
+                      <th>Verification</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {questions.map((q) => {
+                      const d1Ans = d1Result?.answers?.[q.id];
+                      const terraAns = terraResult?.answers?.[q.id];
+                      const rowCorr = correctnessSummary.rows.find(
+                        (r) => r.questionId === q.id
+                      );
+                      const pct = d1Ans ? Math.round(d1Ans.value * 100) : 0;
+
+                      return (
+                        <tr key={q.id}>
+                          <td style={{ maxWidth: 290 }}>
+                            <div style={{ fontWeight: 600, color: "var(--text)" }}>
+                              {q.label}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11.5,
+                                color: "var(--text-muted)",
+                                marginTop: 2,
+                              }}
+                            >
+                              {q.instructions}
+                            </div>
+                          </td>
+                          <td>
+                            <span
+                              style={{
+                                font: "600 10px var(--mono)",
+                                textTransform: "uppercase",
+                                padding: "2px 7px",
+                                borderRadius: 4,
+                                background: "var(--bg-card-soft)",
+                                border: "1px solid var(--border)",
+                              }}
+                            >
+                              {q.type}
+                            </span>
+                          </td>
+                          <td
+                            style={{
+                              font: "600 12px var(--mono)",
+                              color: "var(--text)",
+                            }}
+                          >
+                            {rowCorr?.expected || "—"}
+                          </td>
+                          <td style={{ minWidth: 210 }}>
+                            {d1Ans ? (
+                              <div>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "baseline",
+                                    gap: 8,
+                                  }}
+                                >
+                                  <b
+                                    style={{
+                                      color: "var(--primary)",
+                                      fontSize: 13.5,
+                                    }}
+                                  >
+                                    {d1Ans.label}
+                                  </b>
+                                  <span
+                                    style={{
+                                      font: "500 10.5px var(--mono)",
+                                      color: "var(--text-muted)",
+                                    }}
+                                  >
+                                    {d1Ans.detail}
+                                  </span>
+                                </div>
+                                <div
+                                  style={{
+                                    height: 5,
+                                    borderRadius: 3,
+                                    background: "var(--track)",
+                                    marginTop: 5,
+                                    overflow: "hidden",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      width: `${pct}%`,
+                                      height: "100%",
+                                      background: "var(--primary)",
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <span style={{ color: "var(--text-dim)" }}>
+                                {racing ? "Evaluating…" : "—"}
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            {terraAns ? (
+                              <div>
+                                <b
+                                  style={{
+                                    color: "var(--terra)",
+                                    fontSize: 13,
+                                  }}
+                                >
+                                  {terraAns.label}
+                                </b>
+                                <div
+                                  style={{
+                                    font: "500 10.5px var(--mono)",
+                                    color: "var(--text-muted)",
+                                    marginTop: 2,
+                                  }}
+                                >
+                                  {terraAns.detail}
+                                </div>
+                              </div>
+                            ) : (
+                              <span style={{ color: "var(--text-dim)" }}>
+                                {racing ? "Generating…" : "—"}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ font: "600 11px var(--mono)" }}>
+                            {rowCorr?.d1Match === true ? (
+                              <span
+                                style={{
+                                  color: "var(--primary)",
+                                  background: "var(--primary-soft)",
+                                  padding: "3px 8px",
+                                  borderRadius: 4,
+                                  border: "1px solid var(--border-strong)",
+                                }}
+                              >
+                                ✓ PASS
+                              </span>
+                            ) : rowCorr?.d1Match === false ? (
+                              <span
+                                style={{
+                                  color: "var(--danger)",
+                                  background: "var(--danger-soft)",
+                                  padding: "3px 8px",
+                                  borderRadius: 4,
+                                }}
+                              >
+                                ✗ DIFF
+                              </span>
+                            ) : (
+                              <span style={{ color: "var(--text-dim)" }}>—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* SIDE-BY-SIDE VISUAL METERS */}
+            {outTab === "visual" && (
+              <div style={{ padding: 20 }} className="panels two">
+                <div className="panel winner">
+                  <div className="panel-head">
+                    <div>
+                      <span className="badge">MICROSOFT-DECISION-1</span>
+                      <div
+                        style={{
+                          font: "500 11px var(--mono)",
+                          color: "var(--text-muted)",
+                          marginTop: 3,
+                        }}
+                      >
+                        /providers/microsoft/v1/systemone
+                      </div>
+                    </div>
+                    <span
+                      style={{
+                        font: "700 13px var(--mono)",
+                        color: "var(--primary)",
+                      }}
+                    >
+                      {d1Ms ? `${d1Ms} ms` : "—"}
+                    </span>
+                  </div>
+                  <div
+                    className="panel-body"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}
+                  >
+                    {questions.map((q) => {
+                      const ans = d1Result?.answers?.[q.id];
+                      const pct = ans ? Math.round(ans.value * 100) : 0;
+                      const cls = ans?.cls || "";
+                      return (
+                        <div key={q.id} className="dq">
+                          <div className="dq-head">
+                            <span className="dq-label">{q.label}</span>
+                            <span className={`dq-ans ${cls}`}>
+                              {ans ? ans.label : "…"}
+                            </span>
+                          </div>
+                          <div
+                            className={`dq-meter ${
+                              q.type === "score" ? "scale" : cls
+                            }`}
+                          >
+                            <i
+                              style={
+                                q.type === "score"
+                                  ? { left: `${pct}%` }
+                                  : { width: `${pct}%` }
+                              }
+                            />
+                          </div>
+                          <div className="dq-foot">
+                            <span>type: {q.type}</span>
+                            <span>{ans ? ans.detail : "waiting"}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="panel">
+                  <div className="panel-head">
+                    <div>
+                      <span className="badge terra">
+                        {comparisonModelName.toUpperCase()}
+                      </span>
+                      <div
+                        style={{
+                          font: "500 11px var(--mono)",
+                          color: "var(--text-muted)",
+                          marginTop: 3,
+                        }}
+                      >
+                        /openai/v1/responses
+                      </div>
+                    </div>
+                    <span
+                      style={{
+                        font: "700 13px var(--mono)",
+                        color: "var(--terra)",
+                      }}
+                    >
+                      {terraMs ? `${terraMs} ms` : "—"}
+                    </span>
+                  </div>
+                  <div
+                    className="panel-body"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}
+                  >
+                    {questions.map((q) => {
+                      const ans = terraResult?.answers?.[q.id];
+                      const pct = ans ? Math.round(ans.value * 100) : 0;
+                      const cls = ans?.cls || "";
+                      return (
+                        <div key={q.id} className="dq">
+                          <div className="dq-head">
+                            <span className="dq-label">{q.label}</span>
+                            <span className={`dq-ans ${cls}`}>
+                              {ans ? ans.label : "…"}
+                            </span>
+                          </div>
+                          <div
+                            className={`dq-meter ${
+                              q.type === "score" ? "scale" : cls
+                            }`}
+                          >
+                            <i
+                              style={
+                                q.type === "score"
+                                  ? { left: `${pct}%` }
+                                  : { width: `${pct}%` }
+                              }
+                            />
+                          </div>
+                          <div className="dq-foot">
+                            <span>type: {q.type}</span>
+                            <span>{ans ? ans.detail : "waiting"}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* PROBABILITY DISTRIBUTION VIEW */}
+            {outTab === "probs" && (
+              <div
+                style={{
+                  padding: 20,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                }}
+              >
+                {questions.map((q) => {
+                  const d1Ans = d1Result?.answers?.[q.id];
+                  const terraAns = terraResult?.answers?.[q.id];
+                  const p1Map =
+                    d1Ans?.probabilities ||
+                    (q.type === "noul" && d1Ans
+                      ? {
+                          Yes: d1Ans.value,
+                          No: Number((1 - d1Ans.value).toFixed(4)),
+                        }
+                      : {});
+                  const p2Map =
+                    terraAns?.probabilities ||
+                    (q.type === "noul" && terraAns
+                      ? {
+                          Yes: terraAns.value,
+                          No: Number((1 - terraAns.value).toFixed(4)),
+                        }
+                      : {});
+                  const allLabels = Array.from(
+                    new Set([...Object.keys(p1Map), ...Object.keys(p2Map)])
+                  );
                   return (
-                    <div className="answer-grid-row" key={question.id}>
-                      <div><strong>{question.label}</strong><small>Expected: {row?.expected || "Not set"}</small></div>
-                      {[d1Result, terraResult].map((result, index) => {
-                        const answer = result?.answers?.[question.id];
-                        const match = activeExpected?.[question.id] ? index === 0 ? row?.d1Match : row?.terraMatch : undefined;
-                        return <div key={index} className={index === 0 ? "decision-answer" : "baseline-answer"}>
-                          <strong>{answer?.label || (racing ? "…" : "Unavailable")}</strong>
-                          {answer && <small className={match === false ? "answer-mismatch" : ""}>{match === true ? "Matches expected" : match === false ? "Differs from expected" : "No expected label"}</small>}
-                        </div>;
+                    <div key={q.id} className="panel" style={{ padding: 14 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          marginBottom: 10,
+                          flexWrap: "wrap",
+                          gap: 8,
+                        }}
+                      >
+                        <b style={{ fontFamily: "var(--mono)" }}>
+                          {q.label} ({q.type})
+                        </b>
+                        <span
+                          style={{ color: "var(--text-muted)", fontSize: 12 }}
+                        >
+                          {q.instructions}
+                        </span>
+                      </div>
+                      {allLabels.map((lbl) => {
+                        const p1 = Math.round((p1Map[lbl] || 0) * 100);
+                        const p2 = Math.round((p2Map[lbl] || 0) * 100);
+                        return (
+                          <div
+                            key={lbl}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "150px 1fr 56px 1fr 56px",
+                              gap: 10,
+                              alignItems: "center",
+                              font: "500 11.5px var(--mono)",
+                              marginBottom: 6,
+                            }}
+                          >
+                            <span>{lbl}</span>
+                            <div
+                              style={{
+                                height: 7,
+                                background: "var(--track)",
+                                borderRadius: 3,
+                                overflow: "hidden",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: `${p1}%`,
+                                  height: "100%",
+                                  background: "var(--primary)",
+                                }}
+                              />
+                            </div>
+                            <span
+                              style={{
+                                color: "var(--primary)",
+                                textAlign: "right",
+                              }}
+                            >
+                              {p1}%
+                            </span>
+                            <div
+                              style={{
+                                height: 7,
+                                background: "var(--track)",
+                                borderRadius: 3,
+                                overflow: "hidden",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: `${p2}%`,
+                                  height: "100%",
+                                  background: "var(--terra)",
+                                }}
+                              />
+                            </div>
+                            <span
+                              style={{
+                                color: "var(--terra)",
+                                textAlign: "right",
+                              }}
+                            >
+                              {p2}%
+                            </span>
+                          </div>
+                        );
                       })}
                     </div>
                   );
                 })}
               </div>
-              <button className="text-button result-details-link" onClick={() => setDetailsOpen(true)}>View probabilities, cost breakdown &amp; API &rarr;</button>
-            </>
-          )}
-        </section>
+            )}
+
+            {/* API PAYLOAD & CURL VIEW */}
+            {outTab === "api" && (
+              <div
+                style={{
+                  padding: 20,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 14,
+                }}
+              >
+                {activeSample.codeRule && (
+                  <div className="panel">
+                    <div className="panel-head">
+                      <span className="badge">
+                        DETERMINISTIC GATE RULE IN APPLICATION CODE
+                      </span>
+                    </div>
+                    <div className="panel-body">
+                      <pre className="code">{activeSample.codeRule}</pre>
+                    </div>
+                  </div>
+                )}
+                <div className="panel">
+                  <div className="panel-head">
+                    <span className="badge">
+                      MICROSOFT ENTRA ID CURL — /providers/microsoft/v1/systemone
+                    </span>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => navigator.clipboard?.writeText(curlSnippet)}
+                    >
+                      Copy cURL
+                    </button>
+                  </div>
+                  <div className="panel-body">
+                    <pre className="code">{curlSnippet}</pre>
+                  </div>
+                </div>
+                <div className="panels two">
+                  <div className="panel">
+                    <div className="panel-head">
+                      <span className="badge">DECISION-1 RAW RESPONSE</span>
+                    </div>
+                    <div className="panel-body">
+                      <pre className="code">
+                        {d1Result
+                          ? JSON.stringify(d1Result, null, 2)
+                          : "// Run evaluation to inspect raw JSON"}
+                      </pre>
+                    </div>
+                  </div>
+                  <div className="panel">
+                    <div className="panel-head">
+                      <span className="badge terra">
+                        {comparisonModelName.toUpperCase()} RAW RESPONSE
+                      </span>
+                    </div>
+                    <div className="panel-body">
+                      <pre className="code">
+                        {terraResult
+                          ? JSON.stringify(terraResult, null, 2)
+                          : "// Run evaluation to inspect raw JSON"}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
       </div>
 
-      <Dialog open={detailsOpen} onClose={() => setDetailsOpen(false)} title="Evaluation details" maxWidth={980}>
-        <div className="modal-head"><h2>Evaluation details</h2><button className="ghost" onClick={() => setDetailsOpen(false)}>Close &times;</button></div>
-        <div className="modal-body">
-          <div className="detail-tabs" aria-label="Result detail views">
-            {([["metrics", "Speed & cost"], ["visual", "Answer meters"], ["probs", "Probabilities"], ["api", "API & JSON"]] as const).map(([id, label]) =>
-              <button key={id} className={`input-case-tab ${outTab === id ? "active" : ""}`} aria-pressed={outTab === id} onClick={() => setOutTab(id)}>{label}</button>
-            )}
-          </div>
-          {outTab === "metrics" && <>
-            <div className="wb-table-wrap"><table className="wb-table">
-              <thead><tr><th>Measurement</th><th>Decision-1</th><th>{comparisonModelName}</th></tr></thead>
-              <tbody>
-                <tr><td>Response time</td><td>{d1Ms || "—"} ms</td><td>{terraMs || "—"} ms</td></tr>
-                <tr><td>Matched expected labels</td><td>{d1Result && expectedCount ? `${correctness.d1Correct}/${expectedCount}` : "—"}</td><td>{terraResult && expectedCount ? `${correctness.terraCorrect}/${expectedCount}` : "—"}</td></tr>
-                <tr><td>Cost per 1,000 calls</td><td>${economics.d1CostPer1kUsd.toFixed(4)}</td><td>${economics.terraCostPer1kUsd.toFixed(4)}</td></tr>
-                <tr><td>Input tokens</td><td>{economics.d1InputTokens}</td><td>{economics.terraInputTokens}</td></tr>
-                <tr><td>Output tokens</td><td>{economics.d1OutputTokens}</td><td>{economics.terraOutputTokens}</td></tr>
-              </tbody>
-            </table></div>
-            <p className="detail-note">{economics.isLiveMeasured ? "Token counts use reported usage where available; missing usage is estimated." : "Costs are estimates based on input and question length."} Configured rates: Decision-1 $0.042 / 1M input, $0 output; baseline $2.50 / 1M input, $10 / 1M output. Check your deployment's pricing before forecasting.</p>
-            <p className="detail-note">At {economics.dailyVolume.toLocaleString()} calls / day: estimated monthly savings ${economics.monthlySavingsUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}. Confidence and agreement are not substitutes for representative ground-truth testing.</p>
-          </>}
-          {(outTab === "probs" || outTab === "visual") && questions.map((question) => <section className="answer-detail" key={question.id}>
-            <h3>{question.label} <small>{question.type}</small></h3><p>{question.instructions}</p>
-            <div className="answer-detail-models">
-              {[d1Result, terraResult].map((result, index) => {
-                const answer = result?.answers?.[question.id];
-                const probabilities = answer?.probabilities || (answer && question.type === "noul" ? { Yes: answer.value, No: 1 - answer.value } : {});
-                return <div key={index}>
-                  <strong>{index === 0 ? "Decision-1" : comparisonModelName}</strong>
-                  <p>{answer?.label || "No answer"} · {answer?.detail}</p>
-                  {outTab === "probs" ? Object.entries(probabilities).map(([label, value]) => <div className="probability-row" key={label}><span>{label}</span><meter min={0} max={1} value={value} /><span>{(value * 100).toFixed(1)}%</span></div>) :
-                    answer && <meter className="answer-meter" min={0} max={1} value={Math.max(0, Math.min(1, answer.value))} />}
-                </div>;
-              })}
+      {/* SECONDARY DIALOG: Customize Input Document & Typed Question Schema */}
+      {schemaModalOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setSchemaModalOpen(false)}
+        >
+          <div
+            className="modal-window"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>
+                  Customize Input Document &amp; Decision Questions
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  Edit the input payload or add custom Noul / Choice / Score
+                  questions for live evaluation
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => {
+                    setSchemaModalOpen(false);
+                    runComparison();
+                  }}
+                >
+                  Apply &amp; Run Evaluation
+                </button>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setSchemaModalOpen(false)}
+                >
+                  Close &times;
+                </button>
+              </div>
             </div>
-          </section>)}
-          {outTab === "api" && <>
-            {activeSample.codeRule && <><h3>Application gate rule</h3><pre className="code">{activeSample.codeRule}</pre></>}
-            <div className="pane-heading"><h3>Entra ID request</h3><button className="ghost" onClick={() => navigator.clipboard?.writeText(curl)}>Copy cURL</button></div>
-            <pre className="code">{curl}</pre>
-            <h3>Decision-1 response</h3><pre className="code">{JSON.stringify(d1Result, null, 2)}</pre>
-            <h3>{comparisonModelName} response</h3><pre className="code">{JSON.stringify(terraResult, null, 2)}</pre>
-          </>}
-        </div>
-      </Dialog>
 
-      <Dialog open={schemaModalOpen} onClose={() => setSchemaModalOpen(false)} title="Edit input and questions">
-        <div className="modal-head"><h2>Edit input &amp; questions</h2><button className="ghost" onClick={() => setSchemaModalOpen(false)}>Done &times;</button></div>
-        <div className="modal-body editor-body">
-          <p className="detail-note">Changes are staged for your next comparison. Editing removes built-in expected labels; create a custom solution to define your own ground truth.</p>
-          <label htmlFor="comparison-input">Input document</label>
-          <textarea id="comparison-input" value={stateText} onChange={(event) => { setStateText(event.target.value); markEdited(); }} />
-          <h3>Questions ({questions.length})</h3>
-          {questions.map((question) => <div className="editor-question" key={question.id}><div><strong>{question.label}</strong><small>{question.type} · {question.instructions}</small></div><button className="text-button" onClick={() => { setQuestions((previous) => previous.filter((q) => q.id !== question.id)); markEdited(); }}>Remove</button></div>)}
-          <h3>Add a question</h3>
-          <label htmlFor="question-label">Label</label><input id="question-label" type="text" value={newKey} onChange={(event) => setNewKey(event.target.value)} />
-          <CustomSelect label="Question type" value={newType} onChange={(value) => setNewType(value as QuestionType)} searchable={false} minWidth={0} options={[{ value: "noul", label: "Yes / no (Noul)" }, { value: "choice", label: "Routing (Choice)" }, { value: "score", label: "Rubric (Score)" }]} />
-          <label htmlFor="question-instructions">Instructions</label><input id="question-instructions" type="text" value={newInst} onChange={(event) => setNewInst(event.target.value)} />
-          {newType !== "noul" && <><label htmlFor="question-criteria">{newType === "choice" ? "Options (key: description, …)" : "Ordered levels (Low, Medium, High, …)"}</label><input id="question-criteria" type="text" value={newCriteriaText} onChange={(event) => setNewCriteriaText(event.target.value)} /></>}
-          <button className="ghost" onClick={addQuestion} disabled={!newInst.trim()}>Add question</button>
-          <button className="primary" onClick={() => setSchemaModalOpen(false)}>Use this input</button>
+            <div
+              className="modal-body"
+              style={{ display: "flex", flexDirection: "column", gap: 16 }}
+            >
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    font: "600 11px var(--mono)",
+                    textTransform: "uppercase",
+                    color: "var(--text-muted)",
+                    marginBottom: 6,
+                  }}
+                >
+                  Input State Document
+                </label>
+                <textarea
+                  value={stateText}
+                  onChange={(e) => setStateText(e.target.value)}
+                  style={{ minHeight: 150, fontFamily: "var(--mono)", fontSize: 12.5 }}
+                />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    font: "600 11px var(--mono)",
+                    textTransform: "uppercase",
+                    color: "var(--text-muted)",
+                    marginBottom: 8,
+                  }}
+                >
+                  Active Decision Questions ({questions.length})
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    maxHeight: 240,
+                    overflowY: "auto",
+                  }}
+                >
+                  {questions.map((q) => (
+                    <div
+                      key={q.id}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "90px 1fr auto",
+                        gap: 10,
+                        alignItems: "center",
+                        padding: "8px 12px",
+                        borderRadius: "var(--radius-sm)",
+                        background: "var(--bg-input)",
+                        border: "1px solid var(--border-soft)",
+                        fontSize: 12.5,
+                      }}
+                    >
+                      <span
+                        style={{
+                          font: "600 10.5px var(--mono)",
+                          textTransform: "uppercase",
+                          color: "var(--primary)",
+                        }}
+                      >
+                        {q.type}
+                      </span>
+                      <div>
+                        <b>{q.label}</b> —{" "}
+                        <span style={{ color: "var(--text-muted)" }}>
+                          {q.instructions}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="ghost"
+                        style={{ padding: "2px 8px", fontSize: 11 }}
+                        onClick={() => removeQuestion(q.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: 14,
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-input)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                }}
+              >
+                <div
+                  style={{
+                    font: "600 11px var(--mono)",
+                    textTransform: "uppercase",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  Add Question to Schema
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 180px",
+                    gap: 8,
+                  }}
+                >
+                  <input
+                    type="text"
+                    placeholder="Question label (e.g. Escalation Required)"
+                    value={newKey}
+                    onChange={(e) => setNewKey(e.target.value)}
+                  />
+                  <CustomSelect
+                    value={newType}
+                    onChange={(val) => setNewType(val as QuestionType)}
+                    searchable={false}
+                    options={[
+                      {
+                        value: "noul",
+                        label: "noul (Yes / No / Unsure)",
+                        badge: "NOUL",
+                        badgeTone: "d1",
+                      },
+                      {
+                        value: "choice",
+                        label: "choice (Multi-option)",
+                        badge: "CHOICE",
+                        badgeTone: "info",
+                      },
+                      {
+                        value: "score",
+                        label: "score (0-3 Rubric)",
+                        badge: "SCORE",
+                        badgeTone: "custom",
+                      },
+                    ]}
+                  />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Question instructions (e.g. Does this request require immediate escalation?)"
+                  value={newInst}
+                  onChange={(e) => setNewInst(e.target.value)}
+                />
+                {newType !== "noul" && (
+                  <input
+                    type="text"
+                    placeholder={
+                      newType === "choice"
+                        ? "Comma-separated options, e.g. approve: Fast track, hold: Manual review"
+                        : "Comma-separated scale, e.g. Low, Medium, High, Critical"
+                    }
+                    value={newCriteriaText}
+                    onChange={(e) => setNewCriteriaText(e.target.value)}
+                  />
+                )}
+                <button
+                  type="button"
+                  className="ghost"
+                  style={{ alignSelf: "flex-start" }}
+                  onClick={addQuestion}
+                >
+                  + Add Question
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      </Dialog>
+      )}
     </main>
   );
 }
