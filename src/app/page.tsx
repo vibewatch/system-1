@@ -41,6 +41,8 @@ export default function HomePage() {
     DEFAULT_AZURE_CONFIG
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [demoVideoOpen, setDemoVideoOpen] = useState(false);
+  const demoVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const [customUseCases, setCustomUseCases] = useState<StudioSample[]>([]);
   const [studioExternalSample, setStudioExternalSample] =
@@ -403,6 +405,21 @@ export default function HomePage() {
           <button
             type="button"
             className="ghost"
+            onClick={() => setDemoVideoOpen(true)}
+            style={{
+              borderColor: "var(--primary)",
+              color: "var(--primary)",
+              background: "var(--primary-soft)",
+              fontWeight: 600,
+            }}
+            title="Watch the 69-second narrated Playwright product demo (Azure Neural TTS)"
+          >
+            &#9654; Watch Demo (1:09)
+          </button>
+
+          <button
+            type="button"
+            className="ghost"
             onClick={() => setShowGuide((g) => !g)}
             style={{
               borderColor: showGuide ? "var(--primary)" : "var(--border)",
@@ -628,6 +645,113 @@ export default function HomePage() {
         onClose={() => setSettingsOpen(false)}
         onSave={handleUpdateAzureConfig}
       />
+
+      {demoVideoOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setDemoVideoOpen(false)}
+        >
+          <div
+            className="modal-card"
+            style={{ maxWidth: 1020 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <div className="section-kicker" style={{ marginBottom: 4 }}>
+                  Product Tour · Playwright 1080p Cut · Azure Neural TTS Narration
+                </div>
+                <h3 style={{ fontSize: 17, fontWeight: 700 }}>
+                  Microsoft-Decision-1 Showcase &amp; Live Benchmark (1:09)
+                </h3>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <a
+                  href="./demo-microsoft-decision-1.mp4"
+                  download="microsoft-decision-1-demo.mp4"
+                  className="ghost"
+                  style={{
+                    textDecoration: "none",
+                    padding: "6px 11px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--border)",
+                    fontSize: 12,
+                    color: "var(--text)",
+                  }}
+                >
+                  Download MP4 (15 MB)
+                </a>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setDemoVideoOpen(false)}
+                >
+                  Close &times;
+                </button>
+              </div>
+            </div>
+            <div className="modal-body" style={{ padding: 16 }}>
+              <video
+                ref={demoVideoRef}
+                src="./demo-microsoft-decision-1.mp4"
+                controls
+                autoPlay
+                playsInline
+                style={{
+                  width: "100%",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--border)",
+                  background: "#0D0E0D",
+                  display: "block",
+                }}
+              />
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  marginTop: 12,
+                  alignItems: "center",
+                }}
+              >
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-dim)",
+                    marginRight: 4,
+                  }}
+                >
+                  CHAPTERS:
+                </span>
+                {[
+                  { label: "01 · System-1 Engine (0:00)", sec: 0 },
+                  { label: "02 · Live Benchmark & Cost (0:11)", sec: 11.0 },
+                  { label: "03 · 16 Industry Solutions (0:24)", sec: 24.2 },
+                  { label: "04 · Stream + Decide (0:36)", sec: 35.8 },
+                  { label: "05 · Triage at Scale (0:47)", sec: 47.0 },
+                  { label: "06 · Backend & Client Modes (0:57)", sec: 57.0 },
+                ].map((ch) => (
+                  <button
+                    key={ch.label}
+                    type="button"
+                    className="pill"
+                    style={{ cursor: "pointer", fontSize: 11 }}
+                    onClick={() => {
+                      if (demoVideoRef.current) {
+                        demoVideoRef.current.currentTime = ch.sec;
+                        demoVideoRef.current.play();
+                      }
+                    }}
+                  >
+                    {ch.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="footer">
