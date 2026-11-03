@@ -1,0 +1,48 @@
+[
+  {
+    "id": "custom-telco-bgp-gate",
+    "label": "Custom · Telco BGP Route Hijack & Peering Gate",
+    "category": "Network Security & NOC",
+    "industry": "Telecom, Cloud & DevOps",
+    "origin": "custom",
+    "description": "Evaluates BGP route announcements against RPKI ROA validation and AS-path anomalies before accepting peer routes.",
+    "codeRule": "if (d.rpki_invalid.noul > 0.7 || d.hijack_severity.score >= 2.0) dropBgpPrefixAnnouncement();",
+    "content": "BGP UPDATE: Peer AS64512 announces 203.0.113.0/24 (More-specific of /22 owned by AS15169). RPKI ROA Status: INVALID (Origin AS mismatch). Traffic volume spike +340% in 90 seconds.",
+    "expected": {
+      "noc_action": "reject_and_blackhole_invalid",
+      "hijack_severity": "Critical Prefix Hijack",
+      "rpki_invalid": "Yes"
+    },
+    "questions": [
+      {
+        "id": "noc_action",
+        "label": "BGP Filter Action",
+        "type": "choice",
+        "instructions": "How should the core router policy gate handle this BGP route announcement?",
+        "criteria": {
+          "accept_route": "Valid RPKI ROA and authorized origin AS",
+          "dampen_and_notify": "Minor flap with valid origin AS",
+          "reject_and_blackhole_invalid": "RPKI Invalid origin hijack; drop prefix immediately and page NOC"
+        }
+      },
+      {
+        "id": "hijack_severity",
+        "label": "Route Hijack Severity",
+        "type": "score",
+        "instructions": "How severe is this BGP routing anomaly?",
+        "criteria": [
+          "Normal",
+          "Minor Flap",
+          "Suspicious Leak",
+          "Critical Prefix Hijack"
+        ]
+      },
+      {
+        "id": "rpki_invalid",
+        "label": "RPKI ROA Invalid?",
+        "type": "noul",
+        "instructions": "Does the announcement fail RPKI Route Origin Authorization (ROA) validation?"
+      }
+    ]
+  }
+]
