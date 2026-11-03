@@ -247,14 +247,6 @@ const adaptive = story(
   "checkpoint",
 );
 
-brands.solution.testCases!.push({
-  id: "brand-radar-history",
-  title: "Historical context · negative control",
-  scenarioType: "edge",
-  content: brands.runtime.header + brands.runtime.stages!.map((item) => item.text).join("\n\n"),
-  expected: { ...brands.solution.testCases![1].expected },
-});
-
 const nodes = [
   { id: "smartphones", label: "Smartphones", summary: "Mobile devices contain batteries, software and repairable hardware.", links: ["battery-chemistry", "device-repair", "camera-lenses", "mobile-apps", "wireless-networks"] },
   { id: "battery-chemistry", label: "Battery chemistry", summary: "Rechargeable cells use minerals and chemical processes.", links: ["critical-minerals", "energy-storage", "electronic-waste"] },

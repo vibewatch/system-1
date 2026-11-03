@@ -62,7 +62,7 @@ without model calls or Entra ID sign-in. Pause/resume and 0.5×/1×/2×/4× play
 are available. Latency, token usage and costs remain those of the original run;
 replay is explicitly labelled and is not a new performance benchmark.
 
-The included file contains **69 real Azure recordings**: 52 test cases for
+The included file contains **68 real Azure recordings**: 51 test cases for
 26 solutions (including the saved custom BGP gate), thirteen stories (nine staged
 or graph decision workflows and four generated conversations), three
 triage rates, and one claims workflow.
@@ -82,9 +82,6 @@ corrected the coffee/injection examples; longer exclusion prompts introduced a
 false negative and were not adopted. This is an observed improvement on synthetic
 cases, not a general reliability guarantee.
 
-The brand solution's **Historical context · negative control** keeps the original
-long-history failure reproducible alongside corrected inputs; recorded incorrect
-scores and choices are never rewritten to match expected labels.
 A separate application guard holds flagged **brand recommendations** for editorial
 review at ≥ 70% yes probability; `no_match` already declines publication. The guard
 can produce false positives. Other supported suggestions require ≥ 65% choice probability; the

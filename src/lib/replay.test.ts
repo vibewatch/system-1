@@ -144,6 +144,12 @@ test("included recording covers every built-in case, stream, rate and claims for
 test("brand recordings use current news only and no longer confuse rules or historical relevance with news", async () => {
   const bundle = parseReplayBundle(JSON.parse(await readFile("public/replays/showcase.json", "utf8")));
   const scenario = RUNTIME_SCENARIOS.find((item) => item.id === "brand-radar")!;
+  const sample = STUDIO_SAMPLES.find((item) => item.id === scenario.id)!;
+  assert.deepEqual(bundle.scenarios.find((item) => item.id === sample.id), sample);
+  assert.deepEqual(
+    bundle.recordings.filter((item) => item.action === "run_compare" && JSON.stringify(item.payload.questions) === JSON.stringify(sample.questions)).map((item) => item.payload.state),
+    sample.testCases!.map((item) => item.content),
+  );
   const runtime = bundle.recordings.find((item) => item.id === "runtime-brand-radar")!;
   for (const [index, stage] of scenario.stages!.entries()) {
     const request = runtime.events.find((item) => item.event === "runtime_evaluation_started" && item.data.index === index)!;
