@@ -35,7 +35,7 @@ const ACTIONS: ReplayAction[] = ["run_compare", "start_runtime", "start_triage",
 const EVENTS = new Set([
   "compare_started", "compare_model_done", "compare_finished",
   "runtime_started", "runtime_token", "runtime_decision", "runtime_terra_decision", "runtime_extract", "runtime_done",
-  "runtime_story_stage",
+  "runtime_story_stage", "runtime_evaluation_started", "runtime_navigation_state",
   "triage_started", "triage_arrival", "triage_item_done", "triage_done",
   "agent_step", "agent_gates_done", "agent_field_filled", "agent_done",
 ]);

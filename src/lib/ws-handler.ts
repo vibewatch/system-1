@@ -196,7 +196,7 @@ export function attachWebSocketClient(ws: WebSocket) {
         Array.isArray(payload.questions) && payload.questions.length > 0
           ? (payload.questions as DecisionQuestion[])
           : sc.questions;
-      if (sc.stages) {
+      if (sc.stages || sc.navigation) {
         await runDecisionStory({
           scenario: sc, questions: activeQuestions, signal: ctrl.signal,
           emit: (event, data) => send(ws, event, data),

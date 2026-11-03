@@ -9,7 +9,8 @@ import {
 } from "@/lib/demo-data";
 import type { ExtractedSpan, NormalizedDecision } from "@/lib/foundry";
 import { CustomSelect } from "./CustomSelect";
-import { refundGate } from "@/lib/decision-story";
+import { refundGate, type NavigationProgress } from "@/lib/decision-story";
+import { DecisionStoryView, type StoryCheckpoint } from "./DecisionStoryView";
 
 interface RuntimeViewProps {
   sendWs: (action: string, payload?: Record<string, any>) => boolean;
@@ -22,7 +23,7 @@ interface RuntimeViewProps {
   replayLoading?: boolean;
   comparisonModelName?: string;
   onPlayRecorded?: (scenarioId: string) => void;
-  onOpenWorkbench?: () => void;
+  onOpenWorkbench?: (sampleId?: string) => void;
   onOpenTriage?: () => void;
 }
 
@@ -100,7 +101,12 @@ export default function RuntimeView({
   const [streamDone, setStreamDone] = useState(false);
   const [streamError, setStreamError] = useState("");
   const [storyStage, setStoryStage] = useState(-1);
-  const isStory = Boolean(scenario.stages);
+  const [inferencePhase, setInferencePhase] = useState<"idle" | "receiving" | "evaluating" | "decided" | "stopped">("idle");
+  const [modelInput, setModelInput] = useState("");
+  const [checkpoints, setCheckpoints] = useState<StoryCheckpoint[]>([]);
+  const [showBaseline, setShowBaseline] = useState(false);
+  const [navigationProgress, setNavigationProgress] = useState<NavigationProgress | null>(null);
+  const isStory = Boolean(scenario.stages || scenario.navigation);
   const gate = refundGate(d1Answers);
   const baselineGate = refundGate(terraAnswers);
 
@@ -135,6 +141,10 @@ export default function RuntimeView({
     setStreamDone(false);
     setStreamError("");
     setStoryStage(-1);
+    setInferencePhase("idle");
+    setModelInput("");
+    setCheckpoints([]);
+    setNavigationProgress(null);
     setD1Calls(0);
     setD1MsTotal(0);
     setD1LastMs(0);
@@ -172,10 +182,18 @@ export default function RuntimeView({
         setStoryStage(-1);
       } else if (event === "runtime_story_stage") {
         setStoryStage(data.index);
+        setInferencePhase("receiving");
         setD1Answers({});
         setTerraAnswers({});
         setD1LastMs(0);
         setTerraLastMs(0);
+        setModelInput("");
+      } else if (event === "runtime_evaluation_started") {
+        setInferencePhase("evaluating");
+        setModelInput(data.modelInput);
+        if (Array.isArray(data.questions)) setQuestions(data.questions);
+      } else if (event === "runtime_navigation_state") {
+        setNavigationProgress(data as NavigationProgress);
       } else if (event === "runtime_token") {
         const nextText =
           typeof data.transcript === "string"
@@ -199,6 +217,8 @@ export default function RuntimeView({
         setD1MsTotal((t) => t + lat);
         setD1LastMs(lat);
         setD1Answers(answers);
+        setInferencePhase("decided");
+        if (Number.isInteger(data.index)) setCheckpoints((previous) => [...previous.filter((item) => item.index !== data.index), { index: data.index, title: data.currentNode, latencyMs: lat, answers }]);
 
         setD1History((prev) => {
           const next = { ...prev };
@@ -279,6 +299,7 @@ export default function RuntimeView({
         }
       } else if (event === "runtime_done" || event === "runtime_stopped") {
         setRunning(false);
+        if (event === "runtime_stopped" || data.ok === false) setInferencePhase("stopped");
         if (event === "runtime_done") {
           setStreamDone(data.ok !== false);
           if (data.ok === false) setStreamError(data.error || "The story could not complete its model checks.");
@@ -291,13 +312,15 @@ export default function RuntimeView({
     if (running) {
       sendWs("stop_runtime");
       setRunning(false);
+      setInferencePhase("stopped");
       return;
     }
     resetRun();
+    if (scenario.navigation) setQuestions([...scenario.questions]);
 
     sendWs("start_runtime", {
       scenarioId,
-      questions,
+      questions: scenario.navigation ? scenario.questions : questions,
     });
   };
 
@@ -477,6 +500,19 @@ export default function RuntimeView({
     return answer.label;
   };
 
+  if (isStory && scenario.story) {
+    return <DecisionStoryView
+      scenario={scenario} questions={questions} transcript={transcript} stageIndex={storyStage}
+      phase={inferencePhase} modelInput={modelInput} answers={d1Answers} baselineAnswers={terraAnswers}
+      latencyMs={d1LastMs} baselineLatencyMs={terraLastMs} calls={d1Calls} checkpoints={checkpoints}
+      running={running} complete={streamDone} error={streamError} replayMode={replayMode}
+      replayLoading={replayLoading} ready={wsConnected} comparisonModelName={comparisonModelName}
+      onSelect={setScenarioId} onRun={startStream} onReplay={(id) => onPlayRecorded?.(id)}
+      onVerify={(id) => onOpenWorkbench?.(id)} onTriage={() => onOpenTriage?.()}
+      navigationProgress={navigationProgress}
+    />;
+  }
+
   return (
     <div className="runtime-workspace">
       <section className="story-hero">
@@ -552,10 +588,10 @@ export default function RuntimeView({
               {d1Avg ? `${d1Avg}ms avg` : "—"})
             </span>
             <span>·</span>
-            <span className="terra-stat">
+            {showBaseline && <span className="terra-stat">
               {comparisonModelName}: <b>{terraCalls}</b> calls (
               {terraAvg ? `${terraAvg}ms avg` : "—"})
-            </span>
+            </span>}
             <span>·</span>
             <span>
               Mentions: <b>{exCalls}</b> ({exAvg ? `${exAvg}ms` : "—"})
@@ -634,9 +670,9 @@ export default function RuntimeView({
           </div>}
           <div className="card-head">
             <span className="eyebrow">
-              02 · {questions.length} DECISION SIGNALS ·{" "}
+              02 · MICROSOFT-DECISION-1 OUTPUT ·{" "}
               <span className="hint">
-                Decision-1 solid / baseline dashed
+                {questions.length} structured answers · {d1Avg ? `${d1Avg} ms average` : "awaiting model response"}
               </span>
             </span>
             <button
@@ -648,6 +684,7 @@ export default function RuntimeView({
               + Question
             </button>
           </div>
+          <label className="baseline-toggle"><input type="checkbox" checked={showBaseline} onChange={(event) => setShowBaseline(event.target.checked)} /> Show the generative baseline comparison</label>
 
           {showAddQ && (
             <div
@@ -732,19 +769,19 @@ export default function RuntimeView({
                     <span>D1: {d1LastMs ? `${d1LastMs}ms` : "—"}</span>
                   </div>
 
-                  <div className="dq-terra-row">
+                  {showBaseline && <div className="dq-terra-row">
                     <span>
                       {comparisonModelName}: <b>{answerLabel(q, terraAns)}</b>
                     </span>
                     <span>{terraLastMs ? `${terraLastMs}ms` : "—"}</span>
-                  </div>
+                  </div>}
                   <svg
                     className="spark"
                     viewBox="0 0 100 24"
                     preserveAspectRatio="none"
                   >
                     <line x1="0" y1="12" x2="100" y2="12" />
-                    {terraPoints && (
+                    {showBaseline && terraPoints && (
                       <polyline className="terra-line" points={terraPoints} />
                     )}
                     {d1Points && (
@@ -848,7 +885,7 @@ export default function RuntimeView({
         </section>
       </main>
       <section className="demo-paths" aria-label="Explore the next capability">
-        <button className="demo-path lavender" onClick={onOpenWorkbench}><span>01 / Prove the answer</span><strong>Safe input. Unsafe input.</strong><small>Same questions, paired ground truth &rarr;</small></button>
+        <button className="demo-path lavender" onClick={() => onOpenWorkbench?.()}><span>01 / Prove the answer</span><strong>Safe input. Unsafe input.</strong><small>Same questions, paired ground truth &rarr;</small></button>
         <button className="demo-path pistachio" onClick={onOpenTriage}><span>02 / Increase the pressure</span><strong>40 messages. Two queues.</strong><small>See where slower decisions add delay &rarr;</small></button>
         <button className="demo-path apricot" disabled={running} onClick={() => onPlayRecorded?.("agent-supervisor")}><span>03 / Supervise an agent</span><strong>Done is not the same as verified.</strong><small>Watch for unsafe work and missing tests &rarr;</small></button>
       </section>

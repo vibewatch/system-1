@@ -657,7 +657,7 @@ export default function HomePage() {
           replayLoading={replayLoading || pendingStory !== null}
           comparisonModelName={comparisonModelLabel}
           onPlayRecorded={playRecordedStory}
-          onOpenWorkbench={() => handleLaunchInStudio(allUseCases.find((sample) => sample.id === "refund-authorization") || STUDIO_SAMPLES[0])}
+          onOpenWorkbench={(sampleId = "refund-authorization") => handleLaunchInStudio(allUseCases.find((sample) => sample.id === sampleId) || STUDIO_SAMPLES[0])}
           onOpenTriage={() => setActiveTab("triage")}
         />
       </div>

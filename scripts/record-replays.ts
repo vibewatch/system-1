@@ -58,10 +58,29 @@ function validateResult(recording: ReplayRecording) {
     const completed = results.filter((event) => event.event === "triage_item_done");
     if (completed.length !== TRIAGE_FEED.messages.length * 2 || completed.some((event) => !event.data.ok)) throw new Error("Incomplete or failed triage results.");
   } else if (recording.action === "start_runtime") {
+    const scenario = RUNTIME_SCENARIOS.find((item) => item.id === recording.payload.scenarioId);
+    if (scenario?.stages && !["runtime_evaluation_started", "runtime_decision", "runtime_terra_decision"].every((name) =>
+      results.filter((event) => event.event === name).length === scenario.stages!.length)) throw new Error("Staged story is missing inference checkpoints; re-record its model calls.");
+    if (scenario?.stages && scenario.stages.some((stage, index) => {
+      const expected = scenario.inputScope === "checkpoint" ? stage.text : scenario.header + scenario.stages!.slice(0, index + 1).map((item) => item.text).join("\n\n");
+      return results.find((item) => item.event === "runtime_evaluation_started" && item.data.index === index)?.data.modelInput !== expected;
+    })) throw new Error("The recorded model input no longer matches the scenario's evidence scope.");
+    if (scenario?.navigation) {
+      const requests = results.filter((item) => item.event === "runtime_evaluation_started");
+      if (!requests.length || ["runtime_decision", "runtime_terra_decision"].some((name) => results.filter((item) => item.event === name).length !== requests.length)) throw new Error("Incomplete graph inference results.");
+      const progress = results.filter((item) => item.event === "runtime_navigation_state");
+      if (!["reached", "review"].includes(progress.at(-1)?.data.status)) throw new Error("Graph run has no terminal outcome.");
+      for (const step of progress.filter((item) => item.data.appliedChoice)) {
+        const { path, appliedChoice, index } = step.data;
+        const source = scenario.navigation.nodes.find((item) => item.id === path.at(-2));
+        const response = results.find((item) => item.event === "runtime_decision" && item.data.index === index);
+        if (!response || !source?.links.includes(appliedChoice) || path.at(-1) !== appliedChoice || response.data.answers.next_action.key !== appliedChoice || response.data.answers.next_action.value < 0.65) throw new Error("Recorded graph move was not driven by a supported legal Decision-1 choice.");
+      }
+    }
     const transcript = results.filter((event) => event.event === "runtime_token").at(-1)?.data.transcript;
     if (!transcript || !results.find((event) => event.event === "runtime_done")?.data.ok ||
         !["runtime_decision", "runtime_terra_decision"].every((name) => results.some((event) => event.event === name && event.data.textLen === transcript.length)) ||
-        !results.some((event) => event.event === "runtime_extract")) throw new Error("Incomplete conversation or final decisions.");
+        (!scenario?.navigation && !results.some((event) => event.event === "runtime_extract"))) throw new Error("Incomplete conversation or final decisions.");
   } else {
     const gates = results.find((event) => event.event === "agent_gates_done")?.data;
     if (!gates?.decision1?.ok || !gates?.terra?.ok ||
@@ -137,7 +156,9 @@ async function main() {
   parseReplayBundle(bundle);
   await writeFile(`${output}.ready`, JSON.stringify(bundle));
   await rename(`${output}.ready`, output);
-  await unlink(checkpoint);
+  await unlink(checkpoint).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+  });
   console.log(`Saved ${bundle.recordings.length} complete recordings for ${scenarios.length} solutions to ${output}`);
 }
 

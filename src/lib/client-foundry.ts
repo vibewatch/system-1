@@ -753,7 +753,7 @@ export class BrowserFoundryDispatcher {
         ...SHARED_ENTITY_FIELDS,
         ...scenario.extra,
       };
-      if (scenario.stages) {
+      if (scenario.stages || scenario.navigation) {
         await runDecisionStory({
           scenario, questions, signal: abortCtrl.signal,
           emit: (event, data) => this.emit(event, data),
