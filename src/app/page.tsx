@@ -31,16 +31,16 @@ import {
 const CUSTOM_SOLUTIONS_LS_KEY = "ms_decision1_custom_solutions_v1";
 const DEMO_MODE_KEY = "ms_decision1_demo_mode_v2";
 const TECHNICAL_DEMO = {
-  src: "./demo-microsoft-decision-1.mp4?v=stream-triage-conversation-v3",
-  captions: "./demo-microsoft-decision-1.en.vtt?v=stream-triage-conversation-v3",
-  duration: "2:58",
+  src: "./demo-microsoft-decision-1.mp4?v=stream-triage-conversation-v4",
+  captions: "./demo-microsoft-decision-1.en.vtt?v=stream-triage-conversation-v4",
+  duration: "2:37",
   chapters: [
     { label: "Purpose & model · 0:00", sec: 0 },
     { label: "Customer context · 0:18", sec: 18.175 },
     { label: "Signals & outcome · 0:33", sec: 33.7375 },
     { label: "Inbox triage · 1:09", sec: 69.375 },
-    { label: "Triage results · 2:18", sec: 138.5125 },
-    { label: "Where it fits · 2:38", sec: 158.875 },
+    { label: "Triage results · 1:58", sec: 118.825 },
+    { label: "Where it fits · 2:17", sec: 137.5 },
   ],
 };
 

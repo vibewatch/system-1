@@ -140,75 +140,49 @@ can focus
 00:01:56.672 --> 00:01:58.425
 on customers who need attention.
 
-00:01:58.825 --> 00:02:02.040
-One thing to keep in mind: Decision One
-has
-
-00:02:02.040 --> 00:02:05.254
-eight workers here, and the baseline has
-four. That
-
-00:02:05.254 --> 00:02:08.469
-affects the comparison, so I wouldn't
-treat this run
-
-00:02:08.469 --> 00:02:11.683
-as a universal speed claim. While both
-lanes finish,
-
-00:02:11.683 --> 00:02:14.898
-notice that we keep each message's
-decision, not just
-
-00:02:14.898 --> 00:02:18.112
-a total. That makes the result easier to
-inspect.
-
-00:02:18.513 --> 00:02:21.416
+00:01:58.825 --> 00:02:02.114
 By the end, both lanes have processed all
+forty
 
-00:02:21.416 --> 00:02:24.320
-forty messages. In this recording,
-messages finished in
+00:02:02.114 --> 00:02:05.404
+messages. In this recording, messages
+finished in under a
 
-00:02:24.320 --> 00:02:27.223
-under a second on average in the Decision
+00:02:05.404 --> 00:02:08.694
+second on average in the Decision One
+lane, and
 
-00:02:27.223 --> 00:02:30.127
-One lane, and around ten seconds in the
+00:02:08.694 --> 00:02:11.983
+around ten seconds in the baseline lane.
+Each message
 
-00:02:30.127 --> 00:02:33.031
-baseline lane, with those different worker
-limits. Each
+00:02:11.983 --> 00:02:15.272
+now has a department and urgency, and
+potential churn
 
-00:02:33.031 --> 00:02:35.934
-message now has a department and urgency,
-and
+00:02:15.272 --> 00:02:17.100
+cases are flagged for review.
 
-00:02:35.934 --> 00:02:38.475
-potential churn cases are flagged for
-review.
-
-00:02:38.875 --> 00:02:42.021
+00:02:17.500 --> 00:02:20.646
 So those are two examples: spotting
 changing signals
 
-00:02:42.021 --> 00:02:45.167
+00:02:20.646 --> 00:02:23.792
 during a conversation, and classifying
 incoming work. The
 
-00:02:45.167 --> 00:02:48.313
+00:02:23.792 --> 00:02:26.938
 same pattern can support policy checks or
 routing
 
-00:02:48.313 --> 00:02:51.458
+00:02:26.938 --> 00:02:30.083
 decisions. A language model can still
 write the
 
-00:02:51.458 --> 00:02:54.604
+00:02:30.083 --> 00:02:33.229
 response. Decision One provides the
 structured signals that
 
-00:02:54.604 --> 00:02:57.750
+00:02:33.229 --> 00:02:36.375
 help an application decide what to do
 next.
