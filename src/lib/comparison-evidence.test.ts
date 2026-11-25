@@ -9,6 +9,7 @@ import { ComparisonProof } from "../components/ComparisonProof";
 import { recordingMatches, type ReplayBundle } from "./replay";
 import { getTriageWorkers } from "./triage-config";
 import { BrowserFoundryDispatcher, DEFAULT_AZURE_CONFIG } from "./client-foundry";
+import { evaluateCatalogSample, summarizeCatalogReports } from "./catalog-evidence";
 
 const questions: DecisionQuestion[] = ["agreed", "baseline-error", "decision-error", "unlabeled"].map((id) => ({
   id, label: id, type: "noul", instructions: `Evaluate ${id}`,
@@ -87,13 +88,48 @@ test("rendered proof announces a baseline win and labels unscored answers and as
   const html = renderToStaticMarkup(React.createElement(ComparisonProof, props));
   assert.match(html, /Baseline returned 4.0× faster/);
   assert.match(html, /Not scored/);
-  assert.match(html, /assumed rates/);
-  assert.match(html, /calibration has not been evaluated/);
+  assert.match(html, /Method, confidence &amp; cost assumptions/);
   const failed = renderToStaticMarkup(React.createElement(ComparisonProof, {
     ...props, decision: null, decisionError: "Access denied",
   }));
   assert.match(failed, /Request failure/);
   assert.doesNotMatch(failed, /returned 4.0× faster/);
+});
+
+test("catalog excludes failed and incomplete pairs but retains genuine reference mismatches", async () => {
+  const withCases: StudioSample = { ...sample, testCases: ["failed", "incomplete", "valid", "transport"].map((id) => ({
+    id, title: id, scenarioType: "edge", content: id, expected,
+  })) };
+  const report = await evaluateCatalogSample(withCases, async (state) => {
+    if (state === "transport") throw new Error("Offline");
+    const decision1 = state === "failed" ? { ...result(0), ok: false, status: 503 }
+      : state === "incomplete" ? { ...result(100), answers: {} } : result(100, ["decision-error"]);
+    return { decision1, terra: result(400) };
+  });
+  const stats = summarizeCatalogReports([report]);
+  assert.equal(stats.pairs, 1);
+  assert.equal(stats.failed, 3);
+  assert.equal(stats.totalQuestions, 3);
+  assert.equal(stats.d1Correct, 2);
+  assert.equal(stats.terraCorrect, 3);
+  assert.equal(stats.d1AvgMs, 100);
+  assert.equal(stats.terraAvgMs, 400);
+  assert(report.cases[0].failures[0].includes("503"));
+  assert.equal(report.cases[1].summary, null);
+});
+
+test("catalog aggregation weights individual cases and respects an empty filtered report set", async () => {
+  const first = await evaluateCatalogSample({ ...sample, testCases: ["a", "b"].map((id) => ({
+    id, title: id, scenarioType: "edge", content: id, expected,
+  })) }, async () => ({ decision1: result(100), terra: result(400) }));
+  const second = await evaluateCatalogSample({ ...sample, id: "second" },
+    async () => ({ decision1: result(400), terra: result(100) }));
+  const stats = summarizeCatalogReports([first, second]);
+  assert.equal(stats.d1AvgMs, 200);
+  assert.equal(stats.terraAvgMs, 300);
+  assert.equal(summarizeCatalogReports([second]).d1AvgMs, 400);
+  assert.equal(summarizeCatalogReports([]).pairs, 0);
+  assert.equal(summarizeCatalogReports([]).d1AvgMs, null);
 });
 
 test("browser equal-worker triage reports every failed attempt instead of silently dropping it", async () => {

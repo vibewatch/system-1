@@ -8,12 +8,14 @@ export function Dialog({
   title,
   children,
   maxWidth = 820,
+  className = "",
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
   maxWidth?: number;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
 
@@ -34,11 +36,27 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
-      className="app-dialog"
+      className={`app-dialog ${className}`}
       aria-label={title}
       style={{ maxWidth }}
+      onKeyDown={(event) => {
+        if (event.key !== "Tab") return;
+        const controls = [...event.currentTarget.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])'
+        )].filter((node) => node.tabIndex >= 0 && node.getClientRects().length > 0);
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }}
       onCancel={(event) => {
         event.preventDefault();
+        if (event.currentTarget.querySelector('[aria-haspopup="listbox"][aria-expanded="true"]')) return;
         onClose();
       }}
       onClick={(event) => {

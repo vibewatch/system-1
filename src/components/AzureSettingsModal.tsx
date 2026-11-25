@@ -12,6 +12,7 @@ import { CustomSelect } from "./CustomSelect";
 import { IconButton } from "./IconButton";
 import { X } from "lucide-react";
 import { exportBrowserTraces } from "@/lib/browser-trace";
+import { Dialog } from "./Dialog";
 
 interface Props {
   open: boolean;
@@ -135,12 +136,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="modal-window"
-        style={{ maxWidth: 680 }}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Dialog open={open} onClose={onClose} title="Connection settings" maxWidth={680} className="connection-settings">
         <div className="modal-head">
           <div>
             <div style={{ fontWeight: 700, fontSize: "var(--font-lg)" }}>
@@ -167,9 +163,9 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
         >
           {/* Execution Mode Selector */}
           <div
+            className={draft.mode === "frontend" ? "form-grid" : ""}
             style={{
               display: "grid",
-              gridTemplateColumns: draft.mode === "frontend" ? "1fr 1fr" : "1fr",
               gap: 12,
             }}
           >
@@ -239,9 +235,9 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
             <>
               {/* Endpoint & Model Deployments */}
               <div
+                className="form-grid"
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
                   gap: 10,
                 }}
               >
@@ -288,9 +284,9 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
               </div>
 
               <div
+                className="form-grid"
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
                   gap: 10,
                 }}
               >
@@ -368,9 +364,9 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                   </div>
 
                   <div
+                    className="form-grid"
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr 1fr auto",
                       gap: 8,
                       alignItems: "end",
                     }}
@@ -598,7 +594,6 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

@@ -1,17 +1,14 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   INDUSTRY_VERTICALS,
   DECISION1_INPUT_PRICE_PER_1M_USD,
   TERRA_INPUT_PRICE_PER_1M_USD,
   TERRA_OUTPUT_PRICE_PER_1M_USD,
-  computeCorrectnessSummary,
   computeUseCaseEconomics,
   getScenarioNarrative,
-  type CorrectnessSummary,
   type StudioSample,
-  type SolutionTestCase,
   type DecisionQuestion,
   type QuestionType,
 } from "@/lib/demo-data";
@@ -19,6 +16,9 @@ import type { DecisionRunResult } from "@/lib/foundry";
 import { CustomSelect, type SelectOption } from "./CustomSelect";
 import { IconButton } from "./IconButton";
 import { Trash2, X } from "lucide-react";
+import { Dialog } from "./Dialog";
+import { Disclosure } from "./Disclosure";
+import { evaluateCatalogSample, summarizeCatalogReports, type CatalogReport } from "@/lib/catalog-evidence";
 
 interface Props {
   allUseCases: StudioSample[];
@@ -38,40 +38,13 @@ interface Props {
   }>;
 }
 
-interface CaseBenchmarkResult {
-  caseId: string;
-  caseTitle: string;
-  scenarioType: string;
-  expectedGateVerdict?: string;
-  d1LatencyMs: number;
-  terraLatencyMs: number;
-  summary: CorrectnessSummary;
-}
-
-interface SolutionBenchmarkReport {
-  solutionId: string;
-  running: boolean;
-  cases: CaseBenchmarkResult[];
-  totalQuestions: number;
-  d1TotalCorrect: number;
-  d1AccuracyPct: number;
-  terraTotalCorrect: number;
-  terraAccuracyPct: number;
-  agreementPct: number;
-  d1AvgMs: number;
-  terraAvgMs: number;
-  d1Usage?: { input_tokens: number; output_tokens: number };
-  terraUsage?: { input_tokens: number; output_tokens: number };
-  error?: string;
-}
-
 const QUESTION_TYPE_OPTIONS: SelectOption[] = [
   {
     value: "noul",
-    label: "NOUL — Calibrated Boolean (Yes / No Probability)",
+    label: "NOUL — Boolean (Yes / No Probability)",
     badge: "NOUL",
     badgeTone: "d1",
-    description: "Returns calibrated P(true) and P(false) in [0, 1]",
+    description: "Returns P(true) and P(false); calibration is not evaluated here",
   },
   {
     value: "choice",
@@ -104,10 +77,11 @@ export function UseCaseFrameworkView({
   const [showBuilderModal, setShowBuilderModal] = useState<boolean>(false);
 
   const [reports, setReports] = useState<
-    Record<string, SolutionBenchmarkReport>
+    Record<string, CatalogReport>
   >({});
   const [batchRunning, setBatchRunning] = useState(false);
   const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
+  useEffect(() => { setReports({}); setExpandedReportId(null); }, [replayMode, allUseCases]);
 
   // Custom Solution Builder State
   const [title, setTitle] = useState("Enterprise Vendor Security Gate");
@@ -116,7 +90,7 @@ export function UseCaseFrameworkView({
   );
   const [category, setCategory] = useState("Risk & Compliance Gate");
   const [description, setDescription] = useState(
-    "Evaluates vendor security questionnaire responses in one pass using Microsoft-Decision-1.1 calibrated probabilities."
+    "Evaluates vendor security questionnaire responses against supplied security criteria."
   );
   const [codeRule, setCodeRule] = useState(
     "if (d.soc2_certified.noul > 0.7 && d.risk_tier.score <= 1.2) approveVendor();"
@@ -197,165 +171,23 @@ export function UseCaseFrameworkView({
   const runSolutionBenchmark = async (uc: StudioSample) => {
     setReports((prev) => ({
       ...prev,
-      [uc.id]: {
-        solutionId: uc.id,
-        running: true,
-        cases: [],
-        totalQuestions: 0,
-        d1TotalCorrect: 0,
-        d1AccuracyPct: 0,
-        terraTotalCorrect: 0,
-        terraAccuracyPct: 0,
-        agreementPct: 0,
-        d1AvgMs: 0,
-        terraAvgMs: 0,
-      },
+      [uc.id]: { solutionId: uc.id, running: true, cases: [] },
     }));
-
-    const casesToRun: SolutionTestCase[] =
-      uc.testCases && uc.testCases.length > 0
-        ? uc.testCases
-        : [
-            {
-              id: `${uc.id}-default`,
-              title: "Primary Scenario Case",
-              scenarioType: "edge" as const,
-              content: uc.content,
-              expected: uc.expected || {},
-              expectedGateVerdict: uc.expectedGateVerdict,
-            },
-          ];
-
-    try {
-      const caseResults: CaseBenchmarkResult[] = [];
-      let totalQ = 0;
-      let d1Corr = 0;
-      let terraCorr = 0;
-      let agreeCount = 0;
-      let agreeTotal = 0;
-      let d1MsSum = 0;
-      let terraMsSum = 0;
-      let d1TokensIn = 0;
-      let d1TokensOut = 0;
-      let terraTokensIn = 0;
-      let terraTokensOut = 0;
-
-      for (const tc of casesToRun) {
-        const data = onRunComparePair
-          ? await onRunComparePair(tc.content, uc.questions)
-          : await (
-              await fetch("/api/compare", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  state: tc.content,
-                  questions: uc.questions,
-                  mode: "compare",
-                }),
-              })
-            ).json();
-        const d1Res = data.decision1;
-        const terraRes = data.terra;
-
-        const summary = computeCorrectnessSummary(
-          uc.questions,
-          tc.expected || uc.expected,
-          d1Res?.answers,
-          terraRes?.answers
-        );
-
-        const d1Ms = d1Res?.latency_ms || 0;
-        const terraMs = terraRes?.latency_ms || 0;
-        d1MsSum += d1Ms;
-        terraMsSum += terraMs;
-        if (d1Res?.usage) {
-          d1TokensIn += d1Res.usage.input_tokens || 0;
-          d1TokensOut += d1Res.usage.output_tokens || 0;
-        }
-        if (terraRes?.usage) {
-          terraTokensIn += terraRes.usage.input_tokens || 0;
-          terraTokensOut += terraRes.usage.output_tokens || 0;
-        }
-
-        totalQ += summary.totalQuestions;
-        d1Corr += summary.d1Correct;
-        terraCorr += summary.terraCorrect;
-        for (const r of summary.rows) {
-          if (r.modelsAgree !== null) {
-            agreeTotal++;
-            if (r.modelsAgree) agreeCount++;
-          }
-        }
-
-        caseResults.push({
-          caseId: tc.id,
-          caseTitle: tc.title,
-          scenarioType: tc.scenarioType,
-          expectedGateVerdict: tc.expectedGateVerdict,
-          d1LatencyMs: d1Ms,
-          terraLatencyMs: terraMs,
-          summary,
-        });
-      }
-
-      const n = Math.max(1, caseResults.length);
-      setReports((prev) => ({
-        ...prev,
-        [uc.id]: {
-          solutionId: uc.id,
-          running: false,
-          cases: caseResults,
-          totalQuestions: totalQ,
-          d1TotalCorrect: d1Corr,
-          d1AccuracyPct: totalQ > 0 ? Math.round((d1Corr / totalQ) * 100) : 0,
-          terraTotalCorrect: terraCorr,
-          terraAccuracyPct:
-            totalQ > 0 ? Math.round((terraCorr / totalQ) * 100) : 0,
-          agreementPct:
-            agreeTotal > 0 ? Math.round((agreeCount / agreeTotal) * 100) : 100,
-          d1AvgMs: Math.round(d1MsSum / n),
-          terraAvgMs: Math.round(terraMsSum / n),
-          d1Usage:
-            d1TokensIn > 0
-              ? {
-                  input_tokens: Math.round(d1TokensIn / n),
-                  output_tokens: Math.round(d1TokensOut / n),
-                }
-              : undefined,
-          terraUsage:
-            terraTokensIn > 0
-              ? {
-                  input_tokens: Math.round(terraTokensIn / n),
-                  output_tokens: Math.round(terraTokensOut / n),
-                }
-              : undefined,
-        },
-      }));
-    } catch (err: any) {
-      setReports((prev) => ({
-        ...prev,
-        [uc.id]: {
-          solutionId: uc.id,
-          running: false,
-          cases: [],
-          totalQuestions: 0,
-          d1TotalCorrect: 0,
-          d1AccuracyPct: 0,
-          terraTotalCorrect: 0,
-          terraAccuracyPct: 0,
-          agreementPct: 0,
-          d1AvgMs: 0,
-          terraAvgMs: 0,
-          error: err?.message || "Verification failed",
-        },
-      }));
-    }
+    const report = await evaluateCatalogSample(uc, onRunComparePair || (async (state, questions) => {
+      const response = await fetch("/api/compare", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state, questions, mode: "compare" }),
+      });
+      if (!response.ok) throw new Error("Comparison request failed");
+      return response.json();
+    }));
+    setReports((prev) => ({ ...prev, [uc.id]: report }));
   };
 
   const runBatchSuite = async () => {
     setBatchRunning(true);
     try {
-      const queue = filteredUseCases.slice(0, 6);
+      const queue = filteredUseCases.filter((sample) => !replayMode || readOnlyCaseIds.includes(sample.id));
       for (const uc of queue) {
         await runSolutionBenchmark(uc);
       }
@@ -364,73 +196,8 @@ export function UseCaseFrameworkView({
     }
   };
 
-  const aggregateStats = useMemo(() => {
-    const completed = Object.values(reports).filter(
-      (r) => !r.running && !r.error && r.cases.length > 0
-    );
-    if (completed.length === 0) return null;
-    const totalCases = completed.reduce((acc, r) => acc + r.cases.length, 0);
-    const totalQuestions = completed.reduce(
-      (acc, r) => acc + r.totalQuestions,
-      0
-    );
-    const d1Correct = completed.reduce((acc, r) => acc + r.d1TotalCorrect, 0);
-    const terraCorrect = completed.reduce(
-      (acc, r) => acc + r.terraTotalCorrect,
-      0
-    );
-    const avgD1Ms = Math.round(
-      completed.reduce((acc, r) => acc + r.d1AvgMs, 0) / completed.length
-    );
-    const avgTerraMs = Math.round(
-      completed.reduce((acc, r) => acc + r.terraAvgMs, 0) / completed.length
-    );
-    return {
-      solutionsTested: completed.length,
-      totalCases,
-      totalQuestions,
-      d1AccuracyPct:
-        totalQuestions > 0 ? Math.round((d1Correct / totalQuestions) * 100) : 0,
-      terraAccuracyPct:
-        totalQuestions > 0
-          ? Math.round((terraCorrect / totalQuestions) * 100)
-          : 0,
-      avgD1Ms,
-      avgTerraMs,
-      speedup: avgD1Ms > 0 ? (avgTerraMs / avgD1Ms).toFixed(1) : "—",
-    };
-  }, [reports]);
-
-  const fleetEconomics = useMemo(() => {
-    const targetList =
-      filteredUseCases.length > 0 ? filteredUseCases : allUseCases;
-    let totalD1Per1k = 0;
-    let totalTerraPer1k = 0;
-    let totalMonthlySaved = 0;
-    for (const uc of targetList) {
-      const rep = reports[uc.id];
-      const eco = computeUseCaseEconomics(uc, rep?.d1Usage, rep?.terraUsage);
-      totalD1Per1k += eco.d1CostPer1kUsd;
-      totalTerraPer1k += eco.terraCostPer1kUsd;
-      totalMonthlySaved += eco.monthlySavingsUsd;
-    }
-    const count = Math.max(1, targetList.length);
-    const avgD1Per1k = totalD1Per1k / count;
-    const avgTerraPer1k = totalTerraPer1k / count;
-    const savingsPct =
-      avgTerraPer1k > 0
-        ? Number(((1 - avgD1Per1k / avgTerraPer1k) * 100).toFixed(1))
-        : 99.4;
-    const costMultiplier =
-      avgD1Per1k > 0 ? Math.round(avgTerraPer1k / avgD1Per1k) : 180;
-    return {
-      avgD1Per1k,
-      avgTerraPer1k,
-      savingsPct,
-      costMultiplier,
-      totalMonthlySaved,
-    };
-  }, [filteredUseCases, allUseCases, reports]);
+  const aggregateStats = summarizeCatalogReports(filteredUseCases.flatMap((sample) => reports[sample.id] ? [reports[sample.id]] : []));
+  const runnableCount = filteredUseCases.filter((sample) => !replayMode || readOnlyCaseIds.includes(sample.id)).length;
 
   const handleAddQuestion = () => {
     const idx = questions.length + 1;
@@ -552,10 +319,7 @@ export function UseCaseFrameworkView({
                 maxWidth: 740,
               }}
             >
-              Each scenario explains the real-world operational bottleneck it
-              solves, the specific capability of <b>Microsoft-Decision-1.1</b> it
-              proves, and includes paired <b>Violation vs. Compliant</b> ground-truth
-              test cases.
+              Choose a business task. Compare both models on the same inputs and supplied reference answers.
             </p>
           </div>
 
@@ -570,15 +334,12 @@ export function UseCaseFrameworkView({
             <button
               type="button"
               className="ghost"
-              disabled={batchRunning}
+              disabled={batchRunning || runnableCount === 0 || Object.values(reports).some((report) => report.running)}
               onClick={runBatchSuite}
             >
               {batchRunning
                 ? "Verifying Suite…"
-                : `Verify Filtered Suite (${Math.min(
-                    6,
-                    filteredUseCases.length
-                  )})`}
+                : `${replayMode ? "Replay" : "Verify"} filtered (${runnableCount})`}
             </button>
             <button
               type="button"
@@ -602,7 +363,7 @@ export function UseCaseFrameworkView({
           >
             All Industries ({industryCounts.all})
           </button>
-          {INDUSTRY_VERTICALS.map((ind) => (
+          {INDUSTRY_VERTICALS.filter((ind) => industryCounts[ind] > 0).map((ind) => (
             <button
               key={ind}
               type="button"
@@ -617,103 +378,33 @@ export function UseCaseFrameworkView({
         </div>
       </section>
 
-      {/* EXECUTIVE SUMMARY BAR: Pricing, Economics & Live Batch Accuracy */}
-      <section className="wb-proof-strip">
-        <div className="wb-proof-cell">
-          <div className="wb-proof-label">
-            <span>01 · Assumed Token Rates</span>
-            <span>Verify deployment pricing</span>
-          </div>
-          <div className="wb-proof-main">
-            <span className="wb-proof-hero accent">
-              ${DECISION1_INPUT_PRICE_PER_1M_USD}/1M
-            </span>
-            <div style={{ textAlign: "right", font: "500 var(--font-xs) var(--mono)" }}>
-              <div style={{ color: "var(--primary)", fontWeight: 700 }}>
-                Decision-1.1 Output: $0.00 / 1M
-              </div>
-              <div style={{ color: "var(--terra)" }}>
-                {comparisonModelName}: ${TERRA_INPUT_PRICE_PER_1M_USD}/1M in · $
-                {TERRA_OUTPUT_PRICE_PER_1M_USD}/1M out
-              </div>
-            </div>
-          </div>
-          <div className="wb-proof-sub">
-            <span>Single forward pass</span>
-            <span>{fleetEconomics.costMultiplier}× cheaper per call</span>
-          </div>
-        </div>
-
-        <div className="wb-proof-cell">
-          <div className="wb-proof-label">
-            <span>02 · Estimated Fleet Cost / 1,000 Calls</span>
-            <span>Across {filteredUseCases.length} Scenarios</span>
-          </div>
-          <div className="wb-proof-main">
-            <span className="wb-proof-hero accent">
-              ${fleetEconomics.avgD1Per1k.toFixed(4)}
-            </span>
-            <div style={{ textAlign: "right", font: "500 var(--font-xs) var(--mono)" }}>
-              <div style={{ color: "var(--primary)", fontWeight: 700 }}>
-                Saves {fleetEconomics.savingsPct}% vs LLM
-              </div>
-              <div style={{ color: "var(--terra)" }}>
-                {comparisonModelName}: ${fleetEconomics.avgTerraPer1k.toFixed(2)}{" "}
-                / 1k
-              </div>
-            </div>
-          </div>
-          <div className="wb-proof-sub">
-            <span>Est. fleet savings</span>
-            <span>
-              $
-              {fleetEconomics.totalMonthlySaved.toLocaleString("en-US", {
-                maximumFractionDigits: 0,
-              })}
-              /month
-            </span>
-          </div>
-        </div>
-
-        <div className="wb-proof-cell">
-          <div className="wb-proof-label">
-            <span>03 · Batch Verification Status</span>
-            <span>Ground-Truth Suite</span>
-          </div>
-          <div className="wb-proof-main">
-            <span className="wb-proof-hero">
-              {aggregateStats ? "Paired results" : "Ready"}
-            </span>
-            <div style={{ textAlign: "right", font: "500 var(--font-xs) var(--mono)" }}>
-              <div style={{ color: "var(--primary)", fontWeight: 700 }}>
-                {aggregateStats
-                  ? `Decision-1.1: ${aggregateStats.totalQuestions ? `${aggregateStats.d1AccuracyPct}%` : "Not scored"}`
-                  : "2 cases per solution"}
-              </div>
-              <div style={{ color: "var(--terra)" }}>
-                {aggregateStats
-                  ? `${comparisonModelName}: ${aggregateStats.totalQuestions ? `${aggregateStats.terraAccuracyPct}%` : "Not scored"}`
-                  : "Click Verify Suite above"}
-              </div>
-            </div>
-          </div>
-          <div className="wb-proof-sub">
-            <span>{aggregateStats ? `${aggregateStats.totalCases} cases · ${aggregateStats.totalQuestions} reference answers` : "Violation + Compliant pairs"}</span>
-            <span>{aggregateStats ? `${aggregateStats.avgD1Ms} ms vs ${aggregateStats.avgTerraMs} ms avg` : "Supplied reference answers"}</span>
-          </div>
-        </div>
+      <section className="catalog-results" aria-label="Filtered verification results" aria-live="polite">
+        <div><span className="eyebrow">{replayMode ? "RECORDED" : "LIVE"} · CURRENT FILTER</span>
+          <strong>{aggregateStats.pairs} successful pairs · {aggregateStats.failed} failed / incomplete</strong>
+          <small>{filteredUseCases.length} solutions · {filteredUseCases.reduce((sum, sample) => sum + (sample.testCases?.length || 1), 0)} available cases</small></div>
+        <div><span className="eyebrow">REFERENCE MATCHES</span>
+          <span><b className="d1">Decision-1.1 {aggregateStats.totalQuestions ? `${aggregateStats.d1Correct}/${aggregateStats.totalQuestions}` : "—"}</b>
+            <b className="terra">{comparisonModelName} {aggregateStats.totalQuestions ? `${aggregateStats.terraCorrect}/${aggregateStats.totalQuestions}` : "—"}</b></span></div>
+        <div><span className="eyebrow">PAIRED REQUEST LATENCY · AVG</span>
+          <span><b className="d1">{aggregateStats.d1AvgMs ?? "—"} ms</b><b className="terra">{aggregateStats.terraAvgMs ?? "—"} ms</b></span>
+          <small>Failures excluded from both scores and timing.</small></div>
       </section>
-      <p className="comparison-method">Cost figures use repository rate assumptions, not Azure billing data.
-        Current deployment prices and their verification date are not supplied; verify rates before budgeting.</p>
+      <Disclosure label="Pricing assumptions" className="catalog-pricing">
+        <p>Estimated cost = token usage × assumed rates. Not an Azure bill.
+          Per 1M tokens: Decision-1.1 ${DECISION1_INPUT_PRICE_PER_1M_USD} input / $0 output;
+          {" "}{comparisonModelName} ${TERRA_INPUT_PRICE_PER_1M_USD} input / ${TERRA_OUTPUT_PRICE_PER_1M_USD} output.
+          Verify deployment pricing before budgeting. Finite reference examples do not establish general accuracy or probability calibration.</p>
+      </Disclosure>
 
       {/* CLEAN EDITORIAL SOLUTION CARDS GRID */}
       <div className="uc-grid">
         {filteredUseCases.map((uc) => {
           const rep = reports[uc.id];
+          const stats = summarizeCatalogReports(rep ? [rep] : []);
           const eco = computeUseCaseEconomics(
             uc,
-            rep?.d1Usage,
-            rep?.terraUsage
+            stats.d1Usage,
+            stats.terraUsage
           );
           const narrative = getScenarioNarrative(uc);
           const isExpanded = expandedReportId === uc.id;
@@ -746,67 +437,8 @@ export function UseCaseFrameworkView({
 
                 <h3 className="uc-title">{uc.label}</h3>
 
-                {/* Structured Problem & Proof Explanation (No Cluttered Stacking) */}
-                <div
-                  style={{
-                    marginTop: 10,
-                    border: "1px solid var(--border-soft)",
-                    borderRadius: "var(--radius-sm)",
-                    background: "var(--bg-input)",
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    style={{
-                      padding: "9px 12px",
-                      borderBottom: "1px solid var(--border-soft)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        font: "700 var(--font-xs) var(--mono)",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.08em",
-                        color: "var(--terra)",
-                        marginBottom: 2,
-                      }}
-                    >
-                      Problem Solved
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "var(--font-sm)",
-                        lineHeight: 1.45,
-                        color: "var(--text)",
-                      }}
-                    >
-                      {narrative.problemSolved}
-                    </div>
-                  </div>
-
-                  <div style={{ padding: "9px 12px" }}>
-                    <div
-                      style={{
-                        font: "700 var(--font-xs) var(--mono)",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.08em",
-                        color: "var(--primary)",
-                        marginBottom: 2,
-                      }}
-                    >
-                      What It Proves
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "var(--font-sm)",
-                        lineHeight: 1.45,
-                        color: "var(--text)",
-                      }}
-                    >
-                      {narrative.whatItProves}
-                    </div>
-                  </div>
-                </div>
+                <p className="catalog-task">{narrative.problemSolved}</p>
+                <p className="catalog-capability"><span className="eyebrow">EVALUATES</span> {narrative.whatItProves}</p>
               </div>
 
               {/* Card Footer: Cost Telemetry, Live Accuracy Result, and Actions */}
@@ -825,15 +457,14 @@ export function UseCaseFrameworkView({
                   }}
                 >
                   <span>
-                    D1:{" "}
+                    Est. / 1k:{" "}
                     <b style={{ color: "var(--primary)" }}>
-                      ${eco.d1CostPer1kUsd.toFixed(4)}/1k
+                      ${eco.d1CostPer1kUsd.toFixed(4)}
                     </b>{" "}
-                    vs ${eco.terraCostPer1kUsd.toFixed(2)}/1k (
-                    <b>{eco.savingsPct}% saved</b>)
+                    vs ${eco.terraCostPer1kUsd.toFixed(2)}
                   </span>
 
-                  {rep && !rep.running && !rep.error && (
+                  {rep && !rep.running && (
                     <button
                       type="button"
                       className="ghost"
@@ -842,14 +473,14 @@ export function UseCaseFrameworkView({
                         setExpandedReportId(isExpanded ? null : uc.id)
                       }
                     >
-                      D1 {rep.totalQuestions ? `${rep.d1AccuracyPct}%` : "Not scored"} · {comparisonModelName} {rep.totalQuestions ? `${rep.terraAccuracyPct}%` : "Not scored"}{" "}
+                      {stats.pairs} pairs · {stats.failed} failed{" "}
                       {isExpanded ? "▲" : "▼"}
                     </button>
                   )}
                 </div>
 
                 {/* Collapsible Per-Case Verification Breakdown */}
-                {rep && !rep.running && !rep.error && isExpanded && (
+                {rep && !rep.running && isExpanded && (
                   <div
                     style={{
                       padding: "8px 10px",
@@ -869,6 +500,7 @@ export function UseCaseFrameworkView({
                           display: "flex",
                           justifyContent: "space-between",
                           gap: 8,
+                          flexWrap: "wrap",
                         }}
                       >
                         <span
@@ -880,10 +512,10 @@ export function UseCaseFrameworkView({
                         >
                           {c.caseTitle}
                         </span>
-                        <span style={{ color: "var(--primary)", flexShrink: 0 }}>
-                          D1 {c.summary.d1Correct}/{c.summary.totalQuestions} (
-                          {c.d1LatencyMs}ms)
-                        </span>
+                        <span>{c.summary ? <>
+                          <span className="d1">D1 {c.summary.d1Correct}/{c.summary.totalQuestions} · {c.d1LatencyMs} ms</span>{" / "}
+                          <span className="terra">{comparisonModelName} {c.summary.terraCorrect}/{c.summary.totalQuestions} · {c.terraLatencyMs} ms</span>
+                        </> : <span className="catalog-failure">{c.failures.join("; ")} · not scored</span>}</span>
                       </div>
                     ))}
                   </div>
@@ -897,7 +529,7 @@ export function UseCaseFrameworkView({
                     gap: 8,
                   }}
                 >
-                  <div style={{ display: "flex", gap: 6 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     <button
                       type="button"
                       className="primary"
@@ -908,7 +540,7 @@ export function UseCaseFrameworkView({
                     <button
                       type="button"
                       className="ghost"
-                      disabled={rep?.running}
+                      disabled={rep?.running || batchRunning || (replayMode && !readOnlyCaseIds.includes(uc.id))}
                       onClick={() => runSolutionBenchmark(uc)}
                     >
                       {rep?.running ? "Testing…" : `${replayMode ? "Replay" : "Verify"} ${uc.testCases?.length || 1} Cases`}
@@ -925,25 +557,16 @@ export function UseCaseFrameworkView({
         })}
       </div>
 
-      {/* MODAL DIALOG: Custom Solution Builder */}
+      {filteredUseCases.length === 0 && <p className="detail-note">No matching solutions. Change the search or industry filter.</p>}
       {showBuilderModal && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setShowBuilderModal(false)}
-        >
-          <div
-            className="modal-window"
-            style={{ maxWidth: 860 }}
-            onClick={(e) => e.stopPropagation()}
-          >
+        <Dialog open={showBuilderModal} onClose={() => setShowBuilderModal(false)} title="Custom solution builder" maxWidth={860} className="solution-builder">
             <div className="modal-head">
               <div>
                 <div style={{ fontWeight: 700, fontSize: "var(--font-lg)" }}>
                   Create Custom Microsoft-Decision-1.1 Solution
                 </div>
                 <div style={{ fontSize: "var(--font-sm)", color: "var(--text-muted)" }}>
-                  Define your business scenario, typed questions (Noul / Choice /
-                  Score), and expected ground-truth answers
+                  Define your business scenario, typed questions and supplied reference answers.
                 </div>
               </div>
               <IconButton label="Close custom solution builder" icon={<X size={18} />} onClick={() => setShowBuilderModal(false)} />
@@ -954,9 +577,9 @@ export function UseCaseFrameworkView({
               style={{ display: "flex", flexDirection: "column", gap: 14 }}
             >
               <div
+                className="form-grid"
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
                   gap: 10,
                 }}
               >
@@ -994,9 +617,9 @@ export function UseCaseFrameworkView({
               </div>
 
               <div
+                className="form-grid"
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
                   gap: 10,
                 }}
               >
@@ -1047,7 +670,7 @@ export function UseCaseFrameworkView({
                     marginBottom: 4,
                   }}
                 >
-                  WHAT PROBLEM THIS SOLVES &amp; WHAT IT PROVES
+                  BUSINESS TASK &amp; CAPABILITY UNDER EVALUATION
                 </label>
                 <input
                   type="text"
@@ -1091,7 +714,7 @@ export function UseCaseFrameworkView({
                       color: "var(--text-muted)",
                     }}
                   >
-                    DECISION QUESTIONS &amp; GROUND-TRUTH ANSWERS (
+                    DECISION QUESTIONS &amp; REFERENCE ANSWERS (
                     {questions.length})
                   </span>
                   <button
@@ -1115,18 +738,19 @@ export function UseCaseFrameworkView({
                   {questions.map((q, idx) => (
                     <div
                       key={idx}
+                      className="question-edit-grid"
                       style={{
                         padding: 10,
                         borderRadius: "var(--radius-sm)",
                         border: "1px solid var(--border)",
                         background: "var(--bg-input)",
                         display: "grid",
-                        gridTemplateColumns: "140px 1fr 160px auto",
                         gap: 8,
                         alignItems: "center",
                       }}
                     >
                       <input
+                        aria-label={`Question ${idx + 1} label`}
                         type="text"
                         value={q.label}
                         onChange={(e) =>
@@ -1136,6 +760,7 @@ export function UseCaseFrameworkView({
                         style={{ fontSize: "var(--font-sm)" }}
                       />
                       <input
+                        aria-label={`Question ${idx + 1} instructions`}
                         type="text"
                         value={q.instructions}
                         onChange={(e) =>
@@ -1147,6 +772,7 @@ export function UseCaseFrameworkView({
                         style={{ fontSize: "var(--font-sm)" }}
                       />
                       <input
+                        aria-label={`Question ${idx + 1} reference`}
                         type="text"
                         value={expectedMap[q.id] || ""}
                         onChange={(e) =>
@@ -1191,8 +817,7 @@ export function UseCaseFrameworkView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
     </main>
   );

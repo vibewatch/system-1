@@ -195,6 +195,7 @@ export default function AgentFormView({
           {focused ? <>
             <div><b>{selectedField?.label || selectedGate?.label}</b>
               <IconButton label="Clear evidence focus" icon={<X size={12} />} onClick={() => setFocused(null)} /></div>
+            {selectedField && <p className="claim-selected-value">{selectedField.value || "Not supplied"}</p>}
             {selectedField ? <p>{selectedField.status === "missing" ? "Not supplied. No source span exists."
               : selectedLink ? `${comparisonModelName} extraction · ${Math.round(selectedField.confidence * 100)}% model confidence${selectedField.status === "review" ? " · verify value" : ""}`
                 : "No verified source quote. Check this value manually."}</p>
@@ -208,7 +209,7 @@ export default function AgentFormView({
           <p>{CLAIM_POLICY}</p>
           <p>Identical email and questions; deployments and network conditions may differ. Gate latency excludes extraction. Confidence is not validated accuracy.</p>
           {paired && <p>Estimated cost / 1,000 gate calls: {decisionModelName} ${economics.d1CostPer1kUsd.toFixed(4)} · {comparisonModelName} ${economics.terraCostPer1kUsd.toFixed(4)}.
-            Recorded usage × assumed rates, not an Azure bill. Verify deployment prices.</p>}
+            {replayMode ? "Recorded" : "Measured"} usage × assumed rates, not an Azure bill. Verify deployment prices.</p>}
           <IconButton label="Export claim run JSON" icon={<Download size={14} />} tag="Run JSON" disabled={!decision && !baseline && !fields.length} onClick={exportRun} />
           <p>Export includes the email. Review before sharing. Raw extraction HTTP traces remain in the backend/browser trace store.</p>
           <ClaimDisclosure label="Responses and field evidence"><pre>{JSON.stringify(runData(), null, 2)}</pre></ClaimDisclosure>

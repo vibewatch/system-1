@@ -22,8 +22,15 @@ export function Tooltip({ content, children }: {
   useEffect(() => {
     if (!open) return;
     const dismiss = (event: KeyboardEvent) => { if (event.key === "Escape") hide(); };
+    const dismissPointer = (event: PointerEvent) => {
+      if (!anchor.current?.contains(event.target as Node) && !bubble.current?.contains(event.target as Node)) hide();
+    };
     document.addEventListener("keydown", dismiss);
-    return () => document.removeEventListener("keydown", dismiss);
+    document.addEventListener("pointerdown", dismissPointer, true);
+    return () => {
+      document.removeEventListener("keydown", dismiss);
+      document.removeEventListener("pointerdown", dismissPointer, true);
+    };
   }, [open]);
 
   useLayoutEffect(() => {
@@ -44,7 +51,7 @@ export function Tooltip({ content, children }: {
 
   const describedBy = [children.props["aria-describedby"], open ? id : undefined].filter(Boolean).join(" ") || undefined;
   const host = anchor.current?.closest("dialog[open]") || (typeof document !== "undefined" ? document.body : null);
-  return <span ref={anchor} className="tooltip-anchor" onMouseEnter={show} onMouseLeave={leave} onFocusCapture={() => { clear(); setOpen(true); }} onBlurCapture={hide} onClickCapture={hide}>
+  return <span ref={anchor} className="tooltip-anchor" onMouseEnter={() => { if (matchMedia("(hover: hover)").matches) show(); }} onMouseLeave={leave} onFocusCapture={() => { if (anchor.current?.querySelector(":focus-visible")) { clear(); setOpen(true); } }} onBlurCapture={hide} onClickCapture={hide}>
     {React.cloneElement(children, { "aria-describedby": describedBy })}
     {open && host && createPortal(<div ref={bubble} id={id} role="tooltip" className="custom-tooltip" style={position} onMouseEnter={clear} onMouseLeave={leave}>{content}</div>, host)}
   </span>;

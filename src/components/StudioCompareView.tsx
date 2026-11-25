@@ -17,6 +17,8 @@ import { normalizeFoundryEndpoint } from "@/lib/deployment";
 import { prioritizeQuestions } from "@/lib/comparison-evidence";
 import type { ReplayBundle } from "@/lib/replay";
 import { ComparisonProof } from "./ComparisonProof";
+import { Dialog } from "./Dialog";
+import { Disclosure } from "./Disclosure";
 
 function buildClientSystemOnePayload(
   state: unknown,
@@ -427,16 +429,16 @@ export default function StudioCompareView({
                         borderRadius: 4,
                         background:
                           activeTestCase?.scenarioType === "violation"
-                            ? "var(--danger-soft)"
+                            ? "var(--danger-soft)" : activeTestCase?.scenarioType === "edge" ? "var(--bg-card-soft)"
                             : "var(--primary-soft)",
                         color:
                           activeTestCase?.scenarioType === "violation"
-                            ? "var(--danger)"
+                            ? "var(--danger)" : activeTestCase?.scenarioType === "edge" ? "var(--amber)"
                             : "var(--primary)",
                         border: "1px solid var(--border)",
                       }}
                     >
-                      Expected Verdict: {activeVerdict}
+                      Reference action: {activeVerdict}
                     </span>
                   )}
                 </div>
@@ -508,7 +510,7 @@ export default function StudioCompareView({
                             className="dot"
                             style={{
                               background: isViolation
-                                ? "var(--danger)"
+                                ? "var(--danger)" : tc.scenarioType === "edge" ? "var(--amber)"
                                 : "var(--primary)",
                             }}
                           />
@@ -543,11 +545,19 @@ export default function StudioCompareView({
             </div>
           </section>
 
+          <div className="wb-evidence-grid">
+          <section className="card wb-source">
+            <div className="card-head"><span className="eyebrow">01 · SHARED INPUT</span>
+              <span className="hint">Same document · same questions</span></div>
+            <pre className="comparison-input">{stateText}</pre>
+            <Disclosure label="Business context"><p>{narrative.problemSolved}</p></Disclosure>
+          </section>
           <ComparisonProof key={activeSample.id} sample={activeSample} questions={questions}
             state={stateText} expected={activeExpected} decision={d1Result} baseline={terraResult}
             decisionName={decisionModelName} baselineName={comparisonModelName}
             decisionError={modelErrors.decision1} baselineError={modelErrors.terra}
             running={racing} replayMode={replayMode} replayBundle={replayBundle} />
+          </div>
 
           {/* TIER 3: Unified Criterion Verification Table & Secondary Views */}
           <section className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -622,7 +632,7 @@ export default function StudioCompareView({
                     <tr>
                       <th>Criterion / Question</th>
                       <th>Type</th>
-                      <th>Expected Ground Truth</th>
+                      <th>Supplied reference</th>
                       <th>{decisionModelName}</th>
                       <th>{comparisonModelName}</th>
                       <th>Both-model verification</th>
@@ -1104,34 +1114,12 @@ export default function StudioCompareView({
               </div>
             )}
           </section>
-          <details className="comparison-details wb-brief-card">
-            <summary>Shared input and business context</summary>
-            <div className="wb-purpose-grid">
-              <div className="wb-purpose-cell">
-                <div className="wb-purpose-kicker">Business problem</div>
-                <p className="wb-purpose-body">{narrative.problemSolved}</p>
-              </div>
-              <div className="wb-purpose-cell">
-                <div className="wb-purpose-kicker">Capability under evaluation</div>
-                <p className="wb-purpose-body">Evaluate structured decisions against the reference answers.
-                  Inspect disagreements before drawing conclusions about this scenario.</p>
-              </div>
-            </div>
-            <pre className="comparison-input">{stateText}</pre>
-          </details>
         </div>
       </div>
 
       {/* SECONDARY DIALOG: Customize Input Document & Typed Question Schema */}
       {schemaModalOpen && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setSchemaModalOpen(false)}
-        >
-          <div
-            className="modal-window"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <Dialog open={schemaModalOpen} onClose={() => setSchemaModalOpen(false)} title="Input and question editor" maxWidth={1000} className="input-editor">
             <div className="modal-head">
               <div>
                 <div style={{ fontWeight: 700, fontSize: "var(--font-lg)" }}>
@@ -1203,9 +1191,10 @@ export default function StudioCompareView({
                   {questions.map((q) => (
                     <div
                       key={q.id}
+                      className="question-summary-grid"
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "90px 1fr auto",
+                        gridTemplateColumns: "60px minmax(0, 1fr) auto",
                         gap: 10,
                         alignItems: "center",
                         padding: "8px 12px",
@@ -1257,9 +1246,9 @@ export default function StudioCompareView({
                   Add Question to Schema
                 </div>
                 <div
+                  className="form-grid"
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 180px",
                     gap: 8,
                   }}
                 >
@@ -1323,8 +1312,7 @@ export default function StudioCompareView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
     </main>
   );

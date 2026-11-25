@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useId } from "react";
 
 export interface SelectOption {
   value: string | number;
@@ -41,6 +41,13 @@ export function CustomSelect({
   const [query, setQuery] = useState("");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const listId = useId();
+  const focusOption = (index: number) => {
+    const buttons = containerRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]');
+    if (buttons?.length) buttons[(index + buttons.length) % buttons.length].focus();
+  };
+  const close = () => { setOpen(false); triggerRef.current?.focus(); };
 
   const selectedOption = useMemo(
     () => options.find((o) => String(o.value) === String(value)),
@@ -73,20 +80,26 @@ export function CustomSelect({
     };
     const handleKeyDown = (ev: KeyboardEvent) => {
       if (ev.key === "Escape") {
-        setOpen(false);
+        ev.preventDefault();
+        ev.stopPropagation();
+        close();
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleKeyDown);
+    const container = containerRef.current;
+    container?.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleKeyDown);
+      container?.removeEventListener("keydown", handleKeyDown);
     };
   }, [open]);
 
   useEffect(() => {
     if (open && showSearch) {
-      setTimeout(() => searchInputRef.current?.focus(), 20);
+      const timer = setTimeout(() => searchInputRef.current?.focus(), 0);
+      return () => clearTimeout(timer);
+    } else if (open) {
+      focusOption(Math.max(0, filteredOptions.findIndex((option) => String(option.value) === String(value))));
     } else if (!open) {
       setQuery("");
     }
@@ -99,6 +112,26 @@ export function CustomSelect({
         size === "sm" ? "cselect-sm" : ""
       } ${className}`}
       style={{ minWidth }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        if (!open) {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            setOpen(true);
+          }
+          return;
+        }
+        const options = [...(containerRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') || [])];
+        const index = options.indexOf(document.activeElement as HTMLButtonElement);
+        if (index < 0 && (event.key === "Home" || event.key === "End")) return;
+        event.preventDefault();
+        focusOption(event.key === "Home" ? 0 : event.key === "End" ? options.length - 1
+          : index < 0 ? (event.key === "ArrowUp" ? options.length - 1 : 0)
+          : index + (event.key === "ArrowUp" ? -1 : 1));
+      }}
     >
       {label && (
         <div
@@ -116,10 +149,13 @@ export function CustomSelect({
       <button
         type="button"
         className={`cselect-trigger ${open ? "open" : ""}`}
+        ref={triggerRef}
         disabled={disabled}
         onClick={() => !disabled && setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-label={label || selectedOption?.label || placeholder}
       >
         <span className="cselect-value">
           {selectedOption?.badge && (
@@ -153,7 +189,7 @@ export function CustomSelect({
       </button>
 
       {open && (
-        <div className="cselect-menu" role="listbox">
+        <div className="cselect-menu">
           {showSearch && (
             <div className="cselect-search-wrap">
               <input
@@ -167,7 +203,7 @@ export function CustomSelect({
             </div>
           )}
 
-          <div className="cselect-list">
+          <div className="cselect-list" id={listId} role="listbox" aria-label={label || "Options"}>
             {filteredOptions.length === 0 ? (
               <div className="cselect-empty">No matching options</div>
             ) : (
@@ -182,7 +218,7 @@ export function CustomSelect({
                     className={`cselect-option ${isSelected ? "selected" : ""}`}
                     onClick={() => {
                       onChange(String(opt.value));
-                      setOpen(false);
+                      close();
                     }}
                   >
                     <div className="cselect-opt-main">

@@ -9,6 +9,7 @@ import {
 } from "@/lib/demo-data";
 import type { ExtractedSpan, NormalizedDecision } from "@/lib/foundry";
 import { CustomSelect } from "./CustomSelect";
+import { Disclosure } from "./Disclosure";
 
 interface RuntimeViewProps {
   sendWs: (action: string, payload?: Record<string, any>) => boolean;
@@ -69,10 +70,8 @@ export default function RuntimeView({
   const [terraAnswers, setTerraAnswers] = useState<
     Record<string, NormalizedDecision>
   >({});
-  const [d1History, setD1History] = useState<Record<string, number[]>>({});
-  const [terraHistory, setTerraHistory] = useState<Record<string, number[]>>(
-    {}
-  );
+  const [d1TextLen, setD1TextLen] = useState(0);
+  const [terraTextLen, setTerraTextLen] = useState(0);
   const [flippedKey, setFlippedKey] = useState<string | null>(null);
   const [flipcast, setFlipcast] = useState<{
     label: string;
@@ -150,16 +149,8 @@ export default function RuntimeView({
         setD1Calls((c) => c + 1);
         setD1MsTotal((t) => t + lat);
         setD1LastMs(lat);
+        setD1TextLen(data.textLen || 0);
         setD1Answers(answers);
-
-        setD1History((prev) => {
-          const next = { ...prev };
-          for (const [k, ans] of Object.entries(answers)) {
-            const arr = [...(next[k] || []), ans.value].slice(-36);
-            next[k] = arr;
-          }
-          return next;
-        });
 
         for (const q of questionsRef.current) {
           const ans = answers[q.id];
@@ -214,15 +205,8 @@ export default function RuntimeView({
         setTerraCalls((c) => c + 1);
         setTerraMsTotal((t) => t + lat);
         setTerraLastMs(lat);
+        setTerraTextLen(data.textLen || 0);
         setTerraAnswers(answers);
-        setTerraHistory((prev) => {
-          const next = { ...prev };
-          for (const [k, ans] of Object.entries(answers)) {
-            const arr = [...(next[k] || []), ans.value].slice(-36);
-            next[k] = arr;
-          }
-          return next;
-        });
       } else if (event === "runtime_extract") {
         setExCalls((c) => c + 1);
         setExMsTotal((t) => t + (data.latency_ms || 0));
@@ -250,8 +234,10 @@ export default function RuntimeView({
     setSpans([]);
     setD1Answers({});
     setTerraAnswers({});
-    setD1History({});
-    setTerraHistory({});
+    setD1TextLen(0);
+    setTerraTextLen(0);
+    setD1LastMs(0);
+    setTerraLastMs(0);
     setFlipcast(null);
     setMoments([]);
     setWordFlags([]);
@@ -446,18 +432,12 @@ export default function RuntimeView({
           </h1>
         </div>
         <p className="hero-copy">
-          As a customer or agent conversation {replayMode ? "replays from its recorded timeline" : "streams in over WebSocket"},{" "}
-          <b>Microsoft-Decision-1.1</b> (
-          <code>/providers/microsoft/v1/systemone</code>) evaluates typed questions
-          alongside <b>{comparisonModelName}</b>. Each model processes the latest
-          available snapshot with one request in flight; intermediate snapshots
-          can be skipped.
+          Follow the conversation. See each model&apos;s latest decision and how much of the transcript it has evaluated.
         </p>
       </section>
 
       <p className="comparison-method layout single">
-        Streaming capability demo, not a same-snapshot accuracy benchmark. The models may evaluate different transcript checkpoints.
-        More frequent updates or higher confidence do not establish higher accuracy.
+        Update-cadence demo, not a same-snapshot accuracy benchmark. Different checkpoints can produce different answers.
       </p>
 
       <main className="layout split-6-6">
@@ -535,8 +515,8 @@ export default function RuntimeView({
           {/* 03 Mentions */}
           <div className="card-head sub">
             <span className="eyebrow">
-              03 · LIVE ENTITY MENTIONS{" "}
-              <span className="hint">{spans.length} extracted</span>
+              03 · {replayMode ? "RECORDED" : "LIVE"} ENTITY MENTIONS{" "}
+              <span className="hint">{spans.length} · {comparisonModelName} + pattern matches</span>
             </span>
           </div>
           <div className="ent-groups">
@@ -588,15 +568,12 @@ export default function RuntimeView({
         <section className="card">
           <div className="card-head">
             <span className="eyebrow">
-              02 · DECISIONS ·{" "}
-              <span className="hint">
-                Microsoft-Decision-1.1 (solid) vs {comparisonModelName} (dashed)
-              </span>
+              02 · LATEST DECISIONS
             </span>
             <button
               className="ghost"
               onClick={() => setShowAddQ((v) => !v)}
-              disabled={running}
+              disabled={running || replayMode}
             >
               + Question
             </button>
@@ -624,36 +601,24 @@ export default function RuntimeView({
             </div>
           )}
 
-          <div className="dq-grid">
+          <div className="stream-checkpoints">
+            {[
+              { name: "Decision-1.1", tone: "d1", length: d1TextLen, calls: d1Calls, avg: d1Avg },
+              { name: comparisonModelName, tone: "terra", length: terraTextLen, calls: terraCalls, avg: terraAvg },
+            ].map((model) => <div key={model.tone} className={model.tone}>
+              <b>{model.name}</b>
+              <span>{model.calls} updates · {model.avg ? `${model.avg} ms avg` : "Not run"}</span>
+              <div className="snapshot-track"><i style={{ width: `${transcript.length ? Math.min(100, model.length / transcript.length * 100) : 0}%` }} /></div>
+              <small>Evaluated {model.length.toLocaleString()} / {transcript.length.toLocaleString()} characters</small>
+            </div>)}
+          </div>
+          <p className="stream-snapshot-status">{d1TextLen && terraTextLen
+            ? d1TextLen === terraTextLen ? "Both latest results use the same transcript checkpoint." : "Different checkpoints · answer differences are not scored as errors."
+            : "Waiting for evaluated checkpoints."}</p>
+          <div className="dq-grid stream-decisions">
             {questions.map((q) => {
               const d1Ans = d1Answers[q.id];
               const terraAns = terraAnswers[q.id];
-              const pct = d1Ans ? Math.round(d1Ans.value * 100) : 0;
-              const cls = d1Ans?.cls || "";
-              const histD1 = d1History[q.id] || [];
-              const histTerra = terraHistory[q.id] || [];
-
-              const d1Points = histD1
-                .map((v, i) => {
-                  const x =
-                    histD1.length === 1
-                      ? 100
-                      : (i / (histD1.length - 1)) * 100;
-                  const y = 22 - Math.max(0, Math.min(1, v)) * 18;
-                  return `${x.toFixed(1)},${y.toFixed(1)}`;
-                })
-                .join(" ");
-
-              const terraPoints = histTerra
-                .map((v, i) => {
-                  const x =
-                    histTerra.length === 1
-                      ? 100
-                      : (i / (histTerra.length - 1)) * 100;
-                  const y = 22 - Math.max(0, Math.min(1, v)) * 18;
-                  return `${x.toFixed(1)},${y.toFixed(1)}`;
-                })
-                .join(" ");
 
               return (
                 <div
@@ -662,53 +627,23 @@ export default function RuntimeView({
                 >
                   <div className="dq-head">
                     <span className="dq-label">{q.label}</span>
-                    <span className={`dq-ans ${cls}`}>
-                      {d1Ans ? d1Ans.label : "…"}
-                    </span>
                   </div>
-
-                  <div
-                    className={`dq-meter ${q.type === "score" ? "scale" : cls}`}
-                  >
-                    <i
-                      style={
-                        q.type === "score"
-                          ? { left: `${pct}%` }
-                          : { width: `${pct}%` }
-                      }
-                    />
-                  </div>
-
-                  <div className="dq-foot">
-                    <span>{d1Ans ? d1Ans.detail : "waiting"}</span>
-                    <span>D1: {d1LastMs ? `${d1LastMs}ms` : "—"}</span>
-                  </div>
-
-                  <div className="dq-terra-row">
-                    <span>
-                      {comparisonModelName}: <b>{terraAns ? terraAns.label : "…"}</b>
-                    </span>
-                    <span>{terraLastMs ? `${terraLastMs}ms` : "—"}</span>
-                  </div>
-
-                  <svg
-                    className="spark"
-                    viewBox="0 0 100 24"
-                    preserveAspectRatio="none"
-                  >
-                    <line x1="0" y1="12" x2="100" y2="12" />
-                    {terraPoints && (
-                      <polyline className="terra-line" points={terraPoints} />
-                    )}
-                    {d1Points && (
-                      <polyline className="d1-line" points={d1Points} />
-                    )}
-                  </svg>
+                  {[
+                    { name: "Decision-1.1", answer: d1Ans, tone: "d1", ms: d1LastMs },
+                    { name: comparisonModelName, answer: terraAns, tone: "terra", ms: terraLastMs },
+                  ].map((model) => <div className={`stream-answer ${model.tone}`} key={model.tone}>
+                    <span>{model.name}</span><b>{model.answer?.label || "…"}</b>
+                    <small>{model.answer?.detail || "Awaiting result"}</small><small>{model.ms ? `${model.ms} ms` : "—"}</small>
+                  </div>)}
                 </div>
               );
             })}
           </div>
-
+          <Disclosure label="How streaming comparisons work">
+            <p>Each model has one request in flight and evaluates its latest available snapshot, skipping intermediate updates.
+              Request averages cover different checkpoints. More updates or higher confidence do not establish higher accuracy.
+              Entity extraction uses {comparisonModelName} plus pattern matches. Answer-change markers below track Decision-1.1 only.</p>
+          </Disclosure>
           {/* Flipcast Banner */}
           <div className={`flipcast ${flipcast ? "show" : ""}`}>
             {!flipcast ? (
@@ -774,10 +709,8 @@ export default function RuntimeView({
               <div className="verdict-big">
                 Stream Complete ·{" "}
                 {d1Avg && terraAvg
-                  ? `Decision-1.1 averaged ${d1Avg}ms vs ${terraAvg}ms on ${comparisonModelName} (${(
-                      terraAvg / Math.max(1, d1Avg)
-                    ).toFixed(1)}× faster)`
-                  : `Decision-1.1 completed ${d1Calls} live evaluations`}
+                  ? `Decision-1.1 ${d1Calls} updates · ${comparisonModelName} ${terraCalls} updates`
+                  : `Decision-1.1 completed ${d1Calls} evaluations`}
               </div>
               <span className="eyebrow">
                 THE SCRIPT · RANDOM TWIST & ENDING GIVEN TO {comparisonModelName}

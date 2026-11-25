@@ -171,8 +171,11 @@ test("included recording covers every built-in case, stream, rate and claims for
     assert(recording.events.some((event) => event.event === "runtime_token"));
   }
   for (const rate of [5, 10, 20]) {
-    const recording = bundle.recordings.find((item) => recordingMatches(item, "start_triage", { rate }));
+    const recording = bundle.recordings.find((item) => recordingMatches(item, "start_triage", { rate, comparisonMode: "equal" }));
     assert(recording, `Missing triage ${rate}`);
+    const started = recording.events.find((event) => event.event === "triage_started")?.data;
+    assert.equal(started?.decisionConcurrency, 4);
+    assert.equal(started?.terraConcurrency, 4);
     assert.equal(recording.events.filter((event) => event.event === "triage_item_done" && event.data.ok).length, TRIAGE_FEED.messages.length * 2);
   }
   for (const example of CLAIM_CASES) {

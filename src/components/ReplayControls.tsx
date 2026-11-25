@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { Dialog } from "./Dialog";
 import { CustomSelect } from "./CustomSelect";
 import { redactReplayBundle, type ReplayBundle, type ReplayProgress } from "@/lib/replay";
@@ -26,6 +27,7 @@ export function ReplayControls({
   onStop: () => void;
   onSpeed: (speed: number) => void;
 }) {
+  const fileInput = useRef<HTMLInputElement>(null);
   const download = () => {
     if (!bundle) return;
     const url = URL.createObjectURL(new Blob([JSON.stringify(redactReplayBundle(bundle))], { type: "application/json" }));
@@ -40,21 +42,22 @@ export function ReplayControls({
   return <Dialog open={open} onClose={onClose} title="Demo replay" maxWidth={700}>
     <div className="modal-head"><h2>Demo replay</h2><IconButton label="Close replay options" icon={<X size={18} />} onClick={onClose} /></div>
     <div className="modal-body replay-settings">
-      <p>Recorded Azure results, replayed in the same interface. No model calls or sign-in are needed. Timings, probabilities and costs come from the original run, not a new benchmark.</p>
+      <p>Recorded Azure answers, request timing and token usage. No new model calls or sign-in. Cost estimates apply assumed rates to usage; they are not recorded Azure charges.</p>
       {error && <p role="alert" className="comparison-error">{error}</p>}
       {bundle ? <div className="replay-file-summary">
         <strong>{bundle.scenarios.length} solutions · {bundle.recordings.length} recordings</strong>
         <span>Recorded {new Date(bundle.recordedAt).toLocaleString()}</span>
         <span>{bundle.models.decision1} vs {bundle.models.terra}</span>
-        <span>{bundle.recordings.filter((recording) => recording.action === "run_compare").length} test cases · {bundle.recordings.filter((recording) => recording.action === "start_runtime").length} conversations · {bundle.recordings.filter((recording) => recording.action === "start_triage").length} triage rates · claims workflow</span>
+        <span>{bundle.recordings.filter((recording) => recording.action === "run_compare").length} test cases · {bundle.recordings.filter((recording) => recording.action === "start_runtime").length} conversations · {bundle.recordings.filter((recording) => recording.action === "start_triage").length} triage rates · {bundle.recordings.filter((recording) => recording.action === "run_agent_form").length} claims</span>
       </div> : <p>{loading ? "Loading the recorded showcase…" : "Load the included showcase or import a recording file."}</p>}
       <div className="replay-file-actions">
         <button className="ghost" disabled={loading} onClick={onLoadDefault}>{loading ? "Loading…" : "Load included recordings"}</button>
-        <label className="replay-import">Import JSON<input type="file" accept=".json,application/json" onChange={(event) => {
+        <button className="ghost" onClick={() => fileInput.current?.click()}>Import JSON</button>
+        <input ref={fileInput} hidden aria-label="Replay JSON file" type="file" accept=".json,application/json" onChange={(event) => {
           const file = event.target.files?.[0];
           if (file) onImport(file);
           event.target.value = "";
-        }} /></label>
+        }} />
         {bundle && <IconButton label="Download replay file" icon={<Download size={16} />} tag="JSON" onClick={download} />}
       </div>
       <CustomSelect label="Playback speed" minWidth={0} value={speed} onChange={(value) => onSpeed(Number(value))} searchable={false} options={[
@@ -66,7 +69,9 @@ export function ReplayControls({
       {progress && <div className="replay-file-summary" role="status">
         <strong>{progress.label}</strong>
         <span>{seconds(progress.elapsedMs)} / {seconds(progress.durationMs)} · {progress.playing ? progress.paused ? "Paused" : "Playing" : "Complete"}</span>
-        <progress max={progress.durationMs || 1} value={progress.elapsedMs} />
+        <div className="replay-progress" role="progressbar" aria-label="Replay progress" aria-valuemin={0} aria-valuemax={progress.durationMs || 1} aria-valuenow={progress.elapsedMs}>
+          <i style={{ width: `${Math.min(100, progress.elapsedMs / (progress.durationMs || 1) * 100)}%` }} />
+        </div>
         {progress.playing && <div className="replay-file-actions"><IconButton label={progress.paused ? "Resume replay" : "Pause replay"} icon={progress.paused ? <Play size={16} /> : <Pause size={16} />} tag={progress.paused ? "Resume" : "Pause"} onClick={progress.paused ? onResume : onPause} /><IconButton label="Stop replay" icon={<Square size={16} />} tag="Stop" onClick={onStop} /></div>}
       </div>}
       <p className="detail-note">Use the normal Compare, Stream, Triage and Claims buttons after enabling replay. Unrecorded inputs and custom questions are rejected rather than given invented results. Imported files stay in this tab; reloading restores the included recordings. Resource endpoints and common authentication metadata are redacted on import and download. Files still include demo inputs and outputs; review custom data before sharing.</p>

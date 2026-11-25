@@ -58,6 +58,8 @@ function validateResult(recording: ReplayRecording) {
   } else if (recording.action === "start_triage") {
     const completed = results.filter((event) => event.event === "triage_item_done");
     if (completed.length !== TRIAGE_FEED.messages.length * 2 || completed.some((event) => !event.data.ok)) throw new Error("Incomplete or failed triage results.");
+    const started = results.find((event) => event.event === "triage_started")?.data;
+    if (recording.payload.comparisonMode === "equal" && (started?.decisionConcurrency !== 4 || started?.terraConcurrency !== 4)) throw new Error("Equal-worker recording requires four workers per lane.");
   } else if (recording.action === "start_runtime") {
     const transcript = results.filter((event) => event.event === "runtime_token").at(-1)?.data.transcript;
     if (!transcript || !results.find((event) => event.event === "runtime_done")?.data.ok ||
@@ -92,7 +94,7 @@ async function main() {
     payload: { scenarioId: scenario.id, questions: scenario.questions },
   });
   for (const rate of [5, 10, 20]) requests.push({
-    id: `triage-${rate}`, label: `Queue triage / ${rate} messages per second`, action: "start_triage", payload: { rate, raceTerra: true },
+    id: `triage-${rate}`, label: `Equal-worker triage / ${rate} messages per second`, action: "start_triage", payload: { rate, raceTerra: true, comparisonMode: "equal" },
   });
   for (const example of CLAIM_CASES) requests.push({
     id: `claims-${example.id}`, label: `Claims / ${example.label}`, action: "run_agent_form",

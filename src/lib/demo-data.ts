@@ -1783,7 +1783,7 @@ Clinical Summary:
     industry: "Cybersecurity & SecOps",
     origin: "industry",
     description:
-      "Triages high-volume Endpoint Detection & Response (EDR) telemetry in sub-400ms to isolate credential-dumping attacks while filtering benign admin maintenance.",
+      "Compares credential-dumping indicators with benign maintenance in synthetic Endpoint Detection & Response (EDR) telemetry.",
     codeRule:
       'if (d.credential_dumping.noul > 0.7 && d.threat_score.score >= 2.5) isolateEndpointViaAPI();',
     content: `EDR ALERT #SOC-88412 | Host: FIN-WKSTN-042 (User: j.miller, Accounts Payable)
@@ -2169,57 +2169,57 @@ const SCENARIO_NARRATIVES: Record<string, ScenarioNarrative> = {
     problemSolved:
       "High-volume support queues suffer when defective-hardware returns wait behind routine product questions, causing preventable customer churn.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 can simultaneously assign routing department (Choice), calibrate severity 0–3 (Score), and flag churn probability (Noul) in one ~260ms forward pass.",
-    keyTakeaway: "Replaces slow multi-step LLM prompt chains with a single deterministic triage call.",
+      "Routing department, severity rubric and churn-risk flags against supplied references.",
+    keyTakeaway: "Inspect each decision and its recorded request latency.",
   },
   "insurance-fnol": {
     problemSolved:
       "Manual First Notice of Loss (FNOL) review delays simple rear-end claims that could be fast-tracked in seconds when repair estimates are under £5,000 with zero bodily injury.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 evaluates multi-condition policy gates (liability, injury exclusion, document completeness) with 100% schema fidelity and zero output token cost.",
-    keyTakeaway: "Automates straight-through claims adjudication while holding ambiguous cases for adjusters.",
+      "Liability, injury and document-completeness checks against an explicit intake policy.",
+    keyTakeaway: "A fast-track candidate is not coverage approval or settlement.",
   },
   "cloud-incident": {
     problemSolved:
       "During cloud outages, SRE teams waste critical minutes reading noisy telemetry logs to decide whether to roll back a release or fail over traffic.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 can parse structured metrics (p99 latency spikes, connection pool exhaustion, 5xx rates) and trigger deterministic P1 rollback actions in sub-300ms.",
-    keyTakeaway: "Delivers sub-second automated incident classification suitable for inline CI/CD & SRE runbooks.",
+      "Incident classification from p99 latency, connection-pool and HTTP-error indicators.",
+    keyTakeaway: "Compare structured incident decisions; no production action is executed.",
   },
   "contract-compliance": {
     problemSolved:
       "Enterprise procurement teams bottleneck on reviewing vendor MSAs/DPAs for toxic clauses like uncapped liability, 14-day breach notices, or unauthorized AI training rights.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 accurately decomposes complex legal clauses into calibrated boolean risk flags (`noul`) that match ground-truth legal redlines.",
+      "Boolean clause-risk flags compared with supplied legal-review references.",
     keyTakeaway: "Turns unstructured legal paragraphs into auditable, code-enforceable compliance predicates.",
   },
   "kyc-fraud-gate": {
     problemSolved:
       "Fintech onboarding must block synthetic identities (disposable emails, VPNs, residential-registered shell LLCs) within milliseconds without adding friction for legitimate businesses.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 produces calibrated continuous fraud probabilities (`0.00–1.00`) that plug directly into weighted risk formulas (`0.35 * vpn + 0.40 * disposable`).",
-    keyTakeaway: "Combines the semantic understanding of a language model with the calibrated probabilities of a tabular risk engine.",
+      "Structured risk indicators for the supplied onboarding policy.",
+    keyTakeaway: "Model confidence is not a validated fraud probability.",
   },
   "medical-referral": {
     problemSolved:
       "Hospital referral intake desks receive thousands of unstructured GP letters where red-flag oncology or neurological symptoms can be buried inside routine clinical notes.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 reliably separates urgent 2-week-wait red-flag referrals from routine outpatient consults across multi-criteria clinical rubrics.",
-    keyTakeaway: "Provides deterministic clinical triage prioritization with full probability auditability.",
+      "Referral priority under the supplied synthetic clinical rubric.",
+    keyTakeaway: "Demonstration only; not clinical validation.",
   },
   "ecommerce-refund": {
     problemSolved:
       "E-commerce platforms lose margins both from approving abusive out-of-window returns and from manually reviewing every low-value VIP defect replacement.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 enforces multi-variable return policy rules (14-day window, transit damage evidence, VIP retention risk) in a single atomic API call.",
+      "Return-policy checks for time windows, damage evidence and customer tier.",
     keyTakeaway: "Enables instant self-service RMA approvals while catching policy abuse automatically.",
   },
   "content-safety": {
     problemSolved:
       "Social and marketplace platforms must screen user-generated posts in real time for off-platform payment scams, doxxing, and harassment without blocking benign product reviews.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 can sit inline on every user post at $0.042/1M input tokens (99.4% cheaper than generative LLMs) with sub-300ms latency.",
-    keyTakeaway: "Makes LLM-grade semantic moderation economically viable at tens of millions of posts per day.",
+      "Moderation decisions against supplied references, with recorded timing.",
+    keyTakeaway: "Finite examples are not a production safety benchmark.",
   },
   "agent-tool-firewall": {
     problemSolved:
@@ -2232,21 +2232,21 @@ const SCENARIO_NARRATIVES: Record<string, ScenarioNarrative> = {
     problemSolved:
       "Enterprise RAG assistants occasionally hallucinate SLA numbers or refund promises that contradict retrieved policy documents, creating legal and financial liability.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 verifies factual groundedness and detects source contradictions in a single forward pass before the response is shown to the user.",
-    keyTakeaway: "Eliminates slow 'LLM-as-a-Judge' chain-of-thought overhead for real-time RAG verification.",
+      "Source support, contradictions and unsupported promises in generated answers.",
+    keyTakeaway: "Inspect model decisions against the same retrieved passage.",
   },
   "phishing-injection-shield": {
     problemSolved:
       "Modern phishing emails combine lookalike domains and credential harvesting with embedded `[SYSTEM INSTRUCTION]` prompt injections designed to bypass AI mail filters.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 decomposes email headers, link mismatches, and adversarial prompt injections simultaneously without being hijacked by the injected text.",
-    keyTakeaway: "Hardens enterprise email gateways against both BEC phishing and AI prompt injection.",
+      "Email-header, link-mismatch and embedded-instruction indicators in paired examples.",
+    keyTakeaway: "These examples do not establish resistance to all prompt injections.",
   },
   "pr-security-gate": {
     problemSolved:
       "Developers push hundreds of pull requests daily; running a slow, expensive frontier reasoning model on every git commit diff is too slow and costly for CI/CD pipelines.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 detects SQL injection, debug auth bypasses, exposed secret columns, and missing tests in ~280ms for fractions of a cent.",
+      "SQL injection, authentication bypass, sensitive columns and test coverage in synthetic diffs.",
     keyTakeaway: "Screens every commit in CI/CD and escalates only risky diffs to human AppSec review.",
   },
   "model-complexity-router": {
@@ -2260,29 +2260,29 @@ const SCENARIO_NARRATIVES: Record<string, ScenarioNarrative> = {
     problemSolved:
       "Cross-border payment rails require instant screening of SWIFT MT103 wire instructions for sub-$10k structuring, shell-company mismatches, and PEP/sanctions hits.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 evaluates complex financial crime typology indicators in parallel and outputs calibrated SAR escalation scores.",
-    keyTakeaway: "Reduces false-positive wire holds while catching multi-signal structuring patterns.",
+      "Structuring, counterparty and sanctions indicators in synthetic wire instructions.",
+    keyTakeaway: "Compare escalation decisions; no production false-positive claim.",
   },
   "ind-prior-auth": {
     problemSolved:
       "Patients with urgent neurological deficits wait days for manual clinical prior authorization because reviewers must cross-check MRI findings against conservative therapy logs.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 verifies medical necessity criteria (MRI pathology, >=6 weeks physical therapy, motor deficit red flags) with 100% criterion transparency.",
-    keyTakeaway: "Fast-tracks urgent surgical authorizations while flagging incomplete submissions immediately.",
+      "MRI findings, therapy duration and motor-deficit flags under the supplied synthetic policy.",
+    keyTakeaway: "Demonstration only; no medical authorization is issued.",
   },
   "ind-soc-edr-triage": {
     problemSolved:
       "Enterprise SOC teams face alert fatigue from thousands of daily EDR process trees, risking delayed containment when a real Word-macro-to-LSASS credential dump occurs.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 distinguishes active MITRE ATT&CK credential dumping and lateral movement from signed Windows Update maintenance in sub-350ms.",
-    keyTakeaway: "Automates Tier-1 SOAR host isolation playbooks at machine speed.",
+      "Credential-dumping and lateral-movement indicators versus signed maintenance.",
+    keyTakeaway: "Compare containment recommendations; no host is isolated.",
   },
   "ind-supply-chain-ncr": {
     problemSolved:
       "In semiconductor manufacturing, failing to halt a lithography stepper during a multi-wafer overlay drift excursion ruins millions of dollars of safety-critical automotive wafers.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 evaluates inline metrology specs, consecutive wafer trends, and ASIL-D safety criticality to trigger deterministic MES containment.",
-    keyTakeaway: "Brings calibrated, auditable decision gating to high-speed industrial IoT and QA pipelines.",
+      "Metrology thresholds, wafer trends and safety classification under a synthetic containment policy.",
+    keyTakeaway: "Compare line-stop recommendations; no equipment is controlled.",
   },
   "clinical-trial-screening": {
     problemSolved:
@@ -2295,7 +2295,7 @@ const SCENARIO_NARRATIVES: Record<string, ScenarioNarrative> = {
     problemSolved:
       "Commercial cyber insurers must verify mandatory security controls (privileged MFA, air-gapped immutable backups, EDR coverage, loss history) across lengthy broker submissions.",
     whatItProves:
-      "Proves Microsoft-Decision-1.1 converts unstructured underwriting questionnaires into structured bind/subjectivity/decline decisions with calibrated maturity scores.",
+      "Security-control checks and underwriting routes against supplied references.",
     keyTakeaway: "Standardizes underwriting risk selection across every submission.",
   },
 };
@@ -2306,11 +2306,11 @@ export function getScenarioNarrative(sample: StudioSample): ScenarioNarrative {
   return {
     problemSolved:
       sample.description ||
-      `Automates high-frequency ${sample.industry} policy and routing decisions that otherwise require slow manual review or expensive generative LLM chains.`,
+      `Compare structured decisions for ${sample.industry || sample.category}.`,
     whatItProves:
-      `Proves Microsoft-Decision-1.1 can evaluate all ${sample.questions.length} structured criteria (Noul, Choice, Score) in a single sub-300ms forward pass with calibrated probabilities and zero output token cost.`,
+      sample.questions.map((question) => question.label).join(" · "),
     keyTakeaway:
-      "Delivers deterministic schema output, ground-truth auditability, and 99%+ lower inference cost.",
+      "Compare supplied reference matches and observed request timing; costs use assumed rates.",
   };
 }
 

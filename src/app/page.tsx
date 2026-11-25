@@ -12,7 +12,7 @@ import { ReplayControls } from "@/components/ReplayControls";
 import { IconButton } from "@/components/IconButton";
 import { Tooltip } from "@/components/Tooltip";
 import { ReplayDispatcher, parseReplayBundle, type ReplayBundle, type ReplayProgress } from "@/lib/replay";
-import { AudioLines, ClipboardCheck, GitCompareArrows, Grid2X2, HelpCircle, ListFilter, Moon, MoreHorizontal, Pause, Play, Radio, RotateCcw, Settings2, Square, Sun, Video, X } from "lucide-react";
+import { AudioLines, ClipboardCheck, GitCompareArrows, Grid2X2, HelpCircle, ListFilter, Moon, MoreHorizontal, Pause, Play, Radio, RotateCcw, Settings2, Square, Sun, X } from "lucide-react";
 import {
   STUDIO_SAMPLES,
   type StudioSample,
@@ -30,19 +30,6 @@ import {
 
 const CUSTOM_SOLUTIONS_LS_KEY = "ms_decision1_custom_solutions_v1";
 const DEMO_MODE_KEY = "ms_decision1_demo_mode_v2";
-const TECHNICAL_DEMO = {
-  src: "./demo-microsoft-decision-1.mp4?v=stream-triage-conversation-v4",
-  captions: "./demo-microsoft-decision-1.en.vtt?v=stream-triage-conversation-v4",
-  duration: "2:37",
-  chapters: [
-    { label: "Purpose & model · 0:00", sec: 0 },
-    { label: "Customer context · 0:18", sec: 18.175 },
-    { label: "Signals & outcome · 0:33", sec: 33.7375 },
-    { label: "Inbox triage · 1:09", sec: 69.375 },
-    { label: "Triage results · 1:58", sec: 118.825 },
-    { label: "Where it fits · 2:17", sec: 137.5 },
-  ],
-};
 
 export interface WsIncomingMessage {
   event: string;
@@ -83,8 +70,6 @@ export default function HomePage() {
   activeConfigRef.current = azureConfig;
   const [browserConfig, setBrowserConfig] = useState<AzureClientConfig | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [demoVideoOpen, setDemoVideoOpen] = useState(false);
-  const demoVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const [customUseCases, setCustomUseCases] = useState<StudioSample[]>([]);
   const [studioExternalSample, setStudioExternalSample] =
@@ -493,7 +478,6 @@ export default function HomePage() {
           <IconButton label="Demo replay" icon={replayEnabled ? <Play size={17} /> : <Radio size={17} />} tag={replayEnabled ? "Replay" : "Live"} className={replayEnabled ? "active" : ""} tooltip={replayEnabled ? "Recorded demos · playback, import, download or switch to live" : "Live execution · open replay options"} onClick={() => setReplayOpen(true)} />
           <IconButton label="Connection settings" icon={<Settings2 size={17} />} tooltip={`Connection settings · ${replayEnabled ? "settings apply to live mode" : azureConfig.mode === "backend" ? "Backend server" : "Browser-only execution"}`} onClick={() => setSettingsOpen(true)} />
           <div className="header-secondary-actions">
-            <IconButton label="Watch technical demo" icon={<Video size={17} />} tooltip={`Stream and Triage technical walkthrough · ${TECHNICAL_DEMO.duration} · English narration and captions`} onClick={() => setDemoVideoOpen(true)} />
             <IconButton label={showGuide ? "Hide quick guide" : "Show quick guide"} icon={<HelpCircle size={17} />} aria-pressed={showGuide} onClick={() => setShowGuide((value) => !value)} />
             <IconButton label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"} icon={theme === "light" ? <Moon size={17} /> : <Sun size={17} />} onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} />
           </div>
@@ -519,7 +503,7 @@ export default function HomePage() {
             <div>
               <span className="guide-step-num">Why Microsoft-Decision-1.1?</span>
               <div className="guide-step-title">
-                Deterministic System-1 Decisions in One Forward Pass
+                Structured decisions, measured comparisons
               </div>
               <p className="guide-step-desc">
                 Evaluates structured questions (<b>Noul</b> yes/no,{" "}
@@ -531,23 +515,20 @@ export default function HomePage() {
             <div className="guide-step">
               <span className="guide-step-num">Step 01 · Select Scenario</span>
               <div className="guide-step-title">
-                Read the Problem &amp; Proof Brief
+                Read the input and reference policy
               </div>
               <p className="guide-step-desc">
-                Pick an enterprise scenario on the left to see what
-                business bottleneck it solves and what capability of{" "}
-                <b>Microsoft-Decision-1.1</b> it proves.
+                Choose a scenario and inspect the shared document and questions before comparing results.
               </p>
             </div>
 
             <div className="guide-step">
               <span className="guide-step-num">Step 02 · Switch Test Cases</span>
               <div className="guide-step-title">
-                Test Violation vs. Compliant Inputs
+                Compare explicit business cases
               </div>
               <p className="guide-step-desc">
-                Toggle between <b>Case 1 (Violation / High-Risk)</b> and{" "}
-                <b>Case 2 (Compliant / Safe Pass)</b> and click{" "}
+                Switch between the available cases and click{" "}
                 <b>{replayEnabled ? "Replay comparison" : "Run Evaluation"}</b> to compare {replayEnabled ? "recorded results" : "live"} against{" "}
                 <code>{comparisonModelLabel}</code>.
               </p>
@@ -556,11 +537,10 @@ export default function HomePage() {
             <div className="guide-step">
               <span className="guide-step-num">Step 03 · Inspect Proof</span>
               <div className="guide-step-title">
-                Verify Speed, Accuracy &amp; Cost
+                Inspect differences, timing and references
               </div>
               <p className="guide-step-desc">
-                Review the 3-pillar proof scoreboard (latency speedup,
-                ground-truth accuracy, and cost per 1,000 calls) or switch to{" "}
+                Inspect reference matches and request latency. Cost estimates use assumed rates, not Azure charges. Switch to{" "}
                 <b>Live mode</b> via replay options. Connection settings choose
                 the backend server (default live transport) or browser-only mode.
               </p>
@@ -715,98 +695,10 @@ export default function HomePage() {
       <Dialog open={moreOpen} onClose={() => setMoreOpen(false)} title="More actions" maxWidth={380}>
         <div className="modal-head"><h2>More actions</h2><IconButton label="Close more actions" icon={<X size={18} />} onClick={() => setMoreOpen(false)} /></div>
         <div className="modal-body more-actions">
-          <IconButton label="Watch technical demo" icon={<Video size={18} />} tag={`Technical demo · ${TECHNICAL_DEMO.duration}`} onClick={() => { setMoreOpen(false); setDemoVideoOpen(true); }} />
           <IconButton label={showGuide ? "Hide quick guide" : "Show quick guide"} icon={<HelpCircle size={18} />} tag="Quick guide" onClick={() => { setMoreOpen(false); setShowGuide((value) => !value); }} />
           <IconButton label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"} icon={theme === "light" ? <Moon size={18} /> : <Sun size={18} />} tag={theme === "light" ? "Dark theme" : "Light theme"} onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} />
         </div>
       </Dialog>
-      {demoVideoOpen && (
-        <Dialog open={demoVideoOpen} onClose={() => setDemoVideoOpen(false)} title="Stream and Triage technical walkthrough" maxWidth={1020}>
-            <div className="modal-head" style={{ flexWrap: "wrap", gap: 12 }}>
-              <div>
-                <div className="section-kicker" style={{ marginBottom: 4 }}>
-                  Conversational Walkthrough · Recorded Azure Results
-                </div>
-                <h3 style={{ fontSize: "var(--font-lg)", fontWeight: 700 }}>
-                  Stream &amp; Triage Walkthrough ({TECHNICAL_DEMO.duration})
-                </h3>
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <a
-                  href={TECHNICAL_DEMO.src}
-                  download="decision-1-stream-triage.mp4"
-                  className="ghost"
-                  style={{
-                    textDecoration: "none",
-                    padding: "6px 11px",
-                    borderRadius: "var(--radius-sm)",
-                    border: "1px solid var(--border)",
-                    fontSize: "var(--font-sm)",
-                    color: "var(--text)",
-                  }}
-                >
-                  Download MP4
-                </a>
-                <IconButton label="Close technical demo" icon={<X size={18} />} onClick={() => setDemoVideoOpen(false)} />
-              </div>
-            </div>
-            <div className="modal-body" style={{ padding: 16, maxHeight: "calc(100dvh - 200px)" }}>
-              <video
-                ref={demoVideoRef}
-                src={TECHNICAL_DEMO.src}
-                aria-label="Stream and Triage technical walkthrough"
-                controls
-                autoPlay
-                playsInline
-                style={{
-                  width: "100%",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--border)",
-                  background: "#0D0E0D",
-                  display: "block",
-                }}
-              >
-                <track kind="captions" src={TECHNICAL_DEMO.captions} srcLang="en" label="English" default />
-              </video>
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 6,
-                  marginTop: 12,
-                  alignItems: "center",
-                }}
-              >
-                <span
-                  className="mono"
-                  style={{
-                    fontSize: "var(--font-xs)",
-                    color: "var(--text-dim)",
-                    marginRight: 4,
-                  }}
-                >
-                  CHAPTERS:
-                </span>
-                {TECHNICAL_DEMO.chapters.map((ch) => (
-                  <button
-                    key={ch.label}
-                    type="button"
-                    className="pill"
-                    style={{ cursor: "pointer", fontSize: "var(--font-xs)" }}
-                    onClick={() => {
-                      if (demoVideoRef.current) {
-                        demoVideoRef.current.currentTime = ch.sec;
-                        demoVideoRef.current.play();
-                      }
-                    }}
-                  >
-                    {ch.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-        </Dialog>
-      )}
 
       {/* Footer */}
       <footer className="footer">

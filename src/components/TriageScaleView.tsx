@@ -22,6 +22,7 @@ interface FeedItemState {
   arrivedAt: number;
   d1?: {
     ok: boolean;
+    completedAt: number;
     answers: Record<string, NormalizedDecision>;
     spans: ExtractedSpan[];
     latency_ms: number;
@@ -29,6 +30,7 @@ interface FeedItemState {
   };
   terra?: {
     ok: boolean;
+    completedAt: number;
     answers: Record<string, NormalizedDecision>;
     latency_ms: number;
     wait_ms: number;
@@ -45,7 +47,7 @@ export default function TriageScaleView({
   const [rate, setRate] = useState(10);
   const [comparisonMode, setComparisonMode] = useState<TriageMode>("equal");
   const [resultMode, setResultMode] = useState<TriageMode | null>(null);
-  const mode = replayMode ? "demo" : comparisonMode;
+  const mode = replayMode ? "equal" : comparisonMode;
   const workers = getTriageWorkers(resultMode || mode);
   const [running, setRunning] = useState(false);
   const [items, setItems] = useState<Record<number, FeedItemState>>({});
@@ -127,6 +129,7 @@ export default function TriageScaleView({
               }),
               d1: {
                 ok: data.ok !== false,
+                completedAt: replayMode ? ts : Date.now(),
                 answers: data.answers || {},
                 spans: data.spans || [],
                 latency_ms: data.latency_ms || 0,
@@ -148,6 +151,7 @@ export default function TriageScaleView({
               }),
               terra: {
                 ok: data.ok !== false,
+                completedAt: replayMode ? ts : Date.now(),
                 answers: data.answers || {},
                 latency_ms: data.latency_ms || 0,
                 wait_ms: data.wait_ms || 0,
@@ -182,11 +186,14 @@ export default function TriageScaleView({
     : 0;
   const d1Failed = Object.values(items).filter((item) => item.d1?.ok === false).length;
   const terraFailed = Object.values(items).filter((item) => item.terra?.ok === false).length;
+  const laneSeconds = (lane: "d1" | "terra", done: number) => done === N
+    ? Math.max(0.5, (Math.max(...Object.values(items).map((item) => item[lane]?.completedAt || startTime)) - startTime) / 1000)
+    : elapsedSec;
   const d1Throughput = d1DoneCount
-    ? ((d1DoneCount - d1Failed) / elapsedSec).toFixed(1)
+    ? ((d1DoneCount - d1Failed) / laneSeconds("d1", d1DoneCount)).toFixed(1)
     : "0.0";
   const terraThroughput = terraDoneCount
-    ? ((terraDoneCount - terraFailed) / elapsedSec).toFixed(1)
+    ? ((terraDoneCount - terraFailed) / laneSeconds("terra", terraDoneCount)).toFixed(1)
     : "0.0";
 
   // Aggregated dashboard metrics from Decision-1.1 results
@@ -282,8 +289,8 @@ export default function TriageScaleView({
 
       <main className="layout single">
         <div className="comparison-method">
-          {replayMode ? "Included recordings use the original 8 vs 4 worker workload demo. Switch to live mode for equal-worker execution."
-            : "Equal-worker mode runs the same 40 messages and questions with 4 workers per model. Workload demo preserves the original 8 vs 4 setup."}
+          {replayMode ? "Recorded Azure run · same 40 messages, same questions, 4 workers per model."
+            : "Equal-worker mode uses 4 workers per model. Workload demo uses unequal limits (8 vs 4)."}
           {" "}Results below: {(resultMode || mode) === "equal" ? "equal workers" : "workload demo"}.
           {" "}Different resources and network conditions remain; completion time includes queueing and inference.
         </div>
@@ -308,7 +315,7 @@ export default function TriageScaleView({
                     marginLeft: 10,
                   }}
                 >
-                  3 decisions/msg · /providers/microsoft/v1/systemone
+                  3 decisions / message
                 </span>
               </div>
               <b
@@ -355,7 +362,8 @@ export default function TriageScaleView({
               </div>
             </div>
             <p className="comparison-method">{d1DoneCount - d1Failed} successful · {d1Failed} failed
-              {d1DoneCount > 0 ? ` (${(d1Failed / d1DoneCount * 100).toFixed(1)}% error rate)` : ""}</p>
+              {" · "}Request {Object.values(items).some((item) => item.d1?.ok) ? `${Math.round(Object.values(items).filter((item) => item.d1?.ok).reduce((sum, item) => sum + item.d1!.latency_ms, 0) / Math.max(1, d1DoneCount - d1Failed))} ms avg` : "—"}
+              {" · "}Queue + request {d1AvgWait ? `${(d1AvgWait / 1000).toFixed(1)}s` : "—"}</p>
           </div>
 
           <div className="fh-lane terra">
@@ -377,7 +385,7 @@ export default function TriageScaleView({
                     marginLeft: 10,
                   }}
                 >
-                  Same 3 decisions/msg · /openai/v1/responses
+                  3 decisions / message
                 </span>
               </div>
               <b
@@ -425,9 +433,10 @@ export default function TriageScaleView({
                 <span className="v">{terraThroughput}/s</span>
                 <span className="k">Successful / sec</span>
               </div>
-              <p className="comparison-method">{terraDoneCount - terraFailed} successful · {terraFailed} failed
-                {terraDoneCount > 0 ? ` (${(terraFailed / terraDoneCount * 100).toFixed(1)}% error rate)` : ""}</p>
             </div>
+            <p className="comparison-method">{terraDoneCount - terraFailed} successful · {terraFailed} failed
+              {" · "}Request {Object.values(items).some((item) => item.terra?.ok) ? `${Math.round(Object.values(items).filter((item) => item.terra?.ok).reduce((sum, item) => sum + item.terra!.latency_ms, 0) / Math.max(1, terraDoneCount - terraFailed))} ms avg` : "—"}
+              {" · "}Queue + request {terraAvgWait ? `${(terraAvgWait / 1000).toFixed(1)}s` : "—"}</p>
           </div>
         </section>
 
@@ -528,7 +537,7 @@ export default function TriageScaleView({
           {/* Right: Live Aggregated Dashboard */}
           <section className="card">
             <div className="card-head">
-              <span className="eyebrow">02 · LIVE TRIAGE DASHBOARD</span>
+              <span className="eyebrow">02 · DECISION-1.1 OUTPUT · {replayMode ? "RECORDED" : "LIVE"}</span>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
