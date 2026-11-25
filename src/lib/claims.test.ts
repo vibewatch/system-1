@@ -5,6 +5,7 @@ import { runClaimWorkflow } from "./claim-workflow";
 import { recordingMatches } from "./replay";
 import type { DecisionRunResult } from "./foundry";
 import { BrowserFoundryDispatcher, DEFAULT_AZURE_CONFIG } from "./client-foundry";
+import { claimSourceLinks, claimSourceSegments } from "./claim-evidence";
 
 function result(expected: Record<string, string>): DecisionRunResult {
   return { ok: true, status: 200, model: "test", endpointUsed: "", latency_ms: 100,
@@ -158,4 +159,41 @@ test("browser transport uses the same explicit failure outcome and honors cancel
   assert.equal(events.at(-1)?.data.cancelled, true);
   assert.equal(events.at(-1)?.data.runId, "cancelled-browser");
   assert(!events.some((item) => item.data.outcome));
+});
+
+test("inline segments preserve every character and all overlapping field/policy links", () => {
+  const example = CLAIM_CASES[0];
+  const fields = parseClaimFields(extraction(example), example.content);
+  const links = claimSourceLinks(example.content, fields, example, true);
+  const segments = claimSourceSegments(example.content, links);
+  assert.equal(segments.map((segment) => segment.text).join(""), example.content);
+  const amount = segments.find((segment) => segment.text === "GBP 2,340")!;
+  assert(amount.linkIds.includes("field:estimate"));
+  assert(amount.linkIds.includes("gate:repair_band"));
+  assert(amount.linkIds.includes("gate:claim_route"));
+  assert.equal(links.filter((link) => link.kind === "field").length, 13);
+  assert.equal(links.find((link) => link.id === "gate:claim_route")?.ranges.length, 4);
+  const phone = fields.find((field) => field.name === "phone")!;
+  const quote = `My phone is ${phone.value}.`;
+  const start = example.content.indexOf(quote);
+  const narrowed = claimSourceLinks(example.content, [{ ...phone, quote, start, end: start + quote.length }])[0].ranges[0];
+  assert.equal(example.content.slice(narrowed.start, narrowed.end), phone.value, "Prefer the field value inside its validated source quote");
+});
+
+test("missing fields and stale quotes never manufacture inline source evidence", () => {
+  const example = CLAIM_CASES.find((item) => item.id === "missing-report")!;
+  const fields = parseClaimFields(extraction(example), example.content);
+  const links = claimSourceLinks(example.content, fields, example, true);
+  assert(!links.some((link) => link.id === "field:police_reference"));
+  assert(links.some((link) => link.id === "gate:police_reference"), "The stated missing-report sentence is real policy evidence");
+  const stale = fields.map((field) => ({ ...field, quote: "not present in this email" }));
+  assert.equal(claimSourceLinks(example.content, stale).length, 0);
+  assert(!claimSourceLinks(`${example.content}\nEdited`, fields, example, true).some((link) => link.kind === "gate"));
+});
+
+test("policy evidence is not presented before a gate result or invented for custom inputs", () => {
+  const example = CLAIM_CASES[0];
+  assert.equal(claimSourceLinks(example.content, [], example, false).length, 0);
+  assert.equal(claimSourceLinks("Custom customer email", [], undefined, true).length, 0);
+  assert.equal(claimSourceSegments("Custom customer email", [])[0].text, "Custom customer email");
 });
