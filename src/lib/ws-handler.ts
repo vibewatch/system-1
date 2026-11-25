@@ -331,7 +331,7 @@ export function attachWebSocketClient(ws: WebSocket) {
             elapsed_ms: Math.round(performance.now() - t0),
           });
 
-          // Trigger Microsoft-Decision-1 on every new word boundary
+          // Trigger Microsoft-Decision-1.1 on every new word boundary
           if (words > wordCountAtLastDec) {
             wordCountAtLastDec = words;
             triggerDecision1();
@@ -543,7 +543,7 @@ export function attachWebSocketClient(ws: WebSocket) {
 
       send(ws, "agent_step", {
         icon: "⚡",
-        text: `Evaluating ${CLAIM_DEMO.gates.length} policy & eligibility gates with <b>Microsoft-Decision-1</b> vs <b>gpt-6.1-terra</b>…`,
+        text: `Evaluating ${CLAIM_DEMO.gates.length} policy & eligibility gates with <b>Microsoft-Decision-1.1</b> vs <b>gpt-6.1-terra</b>…`,
         status: "running",
         elapsed_ms: elapsed(),
       });
@@ -561,7 +561,7 @@ export function attachWebSocketClient(ws: WebSocket) {
 
       send(ws, "agent_step", {
         icon: "✓",
-        text: `<b>Microsoft-Decision-1</b> evaluated ${CLAIM_DEMO.gates.length} policy gates in <b>${d1Gates.latency_ms} ms</b> (vs <b>gpt-6.1-terra</b> in <b>${terraGates.latency_ms} ms</b>)`,
+        text: `<b>Microsoft-Decision-1.1</b> evaluated ${CLAIM_DEMO.gates.length} policy gates in <b>${d1Gates.latency_ms} ms</b> (vs <b>gpt-6.1-terra</b> in <b>${terraGates.latency_ms} ms</b>)`,
         status: "ok",
         elapsed_ms: elapsed(),
       });
@@ -668,8 +668,8 @@ Important: If there are two phone numbers in the email (e.g. other driver's phon
         icon: fastTrackAns?.label === "Yes" ? "✓" : "→",
         text:
           fastTrackAns?.label === "Yes"
-            ? `<b>Microsoft-Decision-1 Gate</b>: Fast-track eligible (${fastTrackAns.detail})`
-            : `<b>Microsoft-Decision-1 Gate</b>: Requires manual adjuster review (${fastTrackAns?.detail || "–"})`,
+            ? `<b>Microsoft-Decision-1.1 Gate</b>: Fast-track eligible (${fastTrackAns.detail})`
+            : `<b>Microsoft-Decision-1.1 Gate</b>: Requires manual adjuster review (${fastTrackAns?.detail || "–"})`,
         status: fastTrackAns?.label === "Yes" ? "ok" : "review",
         elapsed_ms: elapsed(),
       });

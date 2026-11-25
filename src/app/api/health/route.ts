@@ -3,14 +3,12 @@ import {
   DEFAULT_FOUNDRY_ENDPOINT,
   DECISION_DEPLOYMENT,
   TERRA_DEPLOYMENT,
-  getEntraToken,
   callDecision1,
 } from "@/lib/foundry";
 
 export async function GET() {
   const t0 = performance.now();
   try {
-    await getEntraToken();
     const probe = await callDecision1("System health check.", [
       {
         id: "ready",
@@ -26,7 +24,9 @@ export async function GET() {
       activeDecisionEndpoint: probe.endpointUsed,
       decisionDeployment: DECISION_DEPLOYMENT,
       terraDeployment: TERRA_DEPLOYMENT,
-      auth: "Microsoft Entra ID (DefaultAzureCredential / Azure CLI)",
+      auth: process.env.AZURE_DECISION_API_KEY
+        ? "Foundry API key"
+        : "Microsoft Entra ID (DefaultAzureCredential / Azure CLI)",
       round_trip_ms,
       decision_latency_ms: probe.latency_ms,
     });

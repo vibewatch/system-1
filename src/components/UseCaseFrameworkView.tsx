@@ -116,7 +116,7 @@ export function UseCaseFrameworkView({
   );
   const [category, setCategory] = useState("Risk & Compliance Gate");
   const [description, setDescription] = useState(
-    "Evaluates vendor security questionnaire responses in one pass using Microsoft-Decision-1 calibrated probabilities."
+    "Evaluates vendor security questionnaire responses in one pass using Microsoft-Decision-1.1 calibrated probabilities."
   );
   const [codeRule, setCodeRule] = useState(
     "if (d.soc2_certified.noul > 0.7 && d.risk_tier.score <= 1.2) approveVendor();"
@@ -553,7 +553,7 @@ export function UseCaseFrameworkView({
               }}
             >
               Each scenario explains the real-world operational bottleneck it
-              solves, the specific capability of <b>Microsoft-Decision-1</b> it
+              solves, the specific capability of <b>Microsoft-Decision-1.1</b> it
               proves, and includes paired <b>Violation vs. Compliant</b> ground-truth
               test cases.
             </p>
@@ -630,7 +630,7 @@ export function UseCaseFrameworkView({
             </span>
             <div style={{ textAlign: "right", font: "500 var(--font-xs) var(--mono)" }}>
               <div style={{ color: "var(--primary)", fontWeight: 700 }}>
-                Decision-1 Output: $0.00 / 1M
+                Decision-1.1 Output: $0.00 / 1M
               </div>
               <div style={{ color: "var(--terra)" }}>
                 {comparisonModelName}: ${TERRA_INPUT_PRICE_PER_1M_USD}/1M in · $
@@ -937,7 +937,7 @@ export function UseCaseFrameworkView({
             <div className="modal-head">
               <div>
                 <div style={{ fontWeight: 700, fontSize: "var(--font-lg)" }}>
-                  Create Custom Microsoft-Decision-1 Solution
+                  Create Custom Microsoft-Decision-1.1 Solution
                 </div>
                 <div style={{ fontSize: "var(--font-sm)", color: "var(--text-muted)" }}>
                   Define your business scenario, typed questions (Noul / Choice /

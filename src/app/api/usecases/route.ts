@@ -59,7 +59,7 @@ export async function POST(req: Request) {
       ).trim(),
       origin: uc.origin || "custom",
       description: String(
-        uc.description || "User-defined Microsoft-Decision-1 solution."
+        uc.description || "User-defined Microsoft-Decision-1.1 solution."
       ).trim(),
       codeRule: uc.codeRule ? String(uc.codeRule).trim() : undefined,
       content: String(uc.content),

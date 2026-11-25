@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Foundry System-One · Microsoft-Decision-1 vs gpt-6.1-terra Playground",
+  title: "Foundry System-One · Microsoft-Decision-1.1 vs gpt-6.1-terra Playground",
   description:
-    "Real-time WebSocket showcase comparing Microsoft-Decision-1 (/providers/microsoft/v1/systemone) and gpt-6.1-terra on Azure AI Foundry with Entra ID authentication.",
+    "Real-time WebSocket showcase comparing Microsoft-Decision-1.1 (/providers/microsoft/v1/systemone) and gpt-6.1-terra on Azure AI Foundry with Entra ID authentication.",
 };
 
 export default function RootLayout({

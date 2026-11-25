@@ -41,18 +41,23 @@ const EVENTS = new Set([
 export const PUBLIC_REPLAY_ENDPOINT = "https://<your-foundry-resource>.cognitiveservices.azure.com";
 
 export function redactReplayBundle(bundle: ReplayBundle): ReplayBundle {
-  return JSON.parse(JSON.stringify(bundle, (key, value: unknown) => {
+  return redactTraceValue(bundle) as ReplayBundle;
+}
+
+export function redactTraceValue(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value, (key, value: unknown) => {
     const field = key.replace(/[-_]/g, "").toLowerCase();
     if (["endpoint", "endpointused", "endpointurl", "foundryendpoint"].includes(field)) return PUBLIC_REPLAY_ENDPOINT;
     if (/^(authorization|proxyauthorization|(?:request|response)?headers|(?:azure(?:openai)?)?apikey|access(?:token|key)|refreshtoken|idtoken|clientsecret|password|credentials|connectionstring|subscriptionid|tenantid|resourceid|clientid)$/.test(field)) return "[redacted]";
     if (typeof value !== "string") return value;
     return value
       .replace(/\b[a-z0-9-]+(?:\.privatelink)?\.cognitiveservices\.azure\.(?:com|us|cn)\b/gi, "<your-foundry-resource>.cognitiveservices.azure.com")
+      .replace(/\b[a-z0-9-]+\.services\.ai\.azure\.(?:com|us|cn)\b/gi, "<your-foundry-resource>.services.ai.azure.com")
       .replace(/\b(?:Bearer|Basic)\s+[a-z0-9._~+\/=-]{16,}/gi, "[redacted-authorization]")
       .replace(/\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b/gi, "[redacted-token]")
       .replace(/\b(api[-_]?key|access[-_]?token|client[-_]?secret)\s*[:=]\s*["']?[^"'\s&,;]+/gi, "$1=[redacted]")
       .replace(/\/subscriptions\/[^/\s"'<>]+\/resourceGroups\/[^/\s"'<>]+(?:\/providers\/[^/\s"'<>]+(?:\/[^/\s"'<>]+)*)?/gi, "[redacted-resource-id]");
-  })) as ReplayBundle;
+  }));
 }
 
 function canonical(value: unknown): string {

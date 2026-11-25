@@ -1,6 +1,8 @@
 "use client";
 
 import { PublicClientApplication } from "@azure/msal-browser";
+import { DEFAULT_DECISION_DEPLOYMENT, DEFAULT_DECISION_ENDPOINT, normalizeFoundryEndpoint } from "./deployment";
+import { tracedBrowserFetch } from "./browser-trace";
 import {
   CLAIM_DEMO,
   DecisionQuestion,
@@ -37,8 +39,8 @@ export const CONFIG_STORAGE_KEY = "ms_decision1_azure_config_v2";
 export const DEFAULT_AZURE_CONFIG: AzureClientConfig = {
   mode: "backend", // Default is Frontend + Backend server mode; users can switch to Client-Only (Frontend) mode in Connection Settings
   endpoint: "",
-  decisionEndpoint: "",
-  decisionDeployment: "Decision-1",
+  decisionEndpoint: DEFAULT_DECISION_ENDPOINT,
+  decisionDeployment: DEFAULT_DECISION_DEPLOYMENT,
   terraDeployment: "gpt-6.1-terra",
   authMethod: "entra_msal",
   tenantId: "common",
@@ -56,6 +58,12 @@ export function loadAzureConfig(): AzureClientConfig {
     return {
       ...DEFAULT_AZURE_CONFIG,
       ...parsed,
+      decisionDeployment: parsed.decisionDeployment === "Decision-1"
+        ? DEFAULT_AZURE_CONFIG.decisionDeployment
+        : parsed.decisionDeployment || DEFAULT_AZURE_CONFIG.decisionDeployment,
+      decisionEndpoint: parsed.decisionDeployment === "Decision-1"
+        ? DEFAULT_DECISION_ENDPOINT
+        : parsed.decisionEndpoint ?? DEFAULT_AZURE_CONFIG.decisionEndpoint,
     };
   } catch {
     return DEFAULT_AZURE_CONFIG;
@@ -167,7 +175,7 @@ function getAuthHeaders(cfg: AzureClientConfig): Record<string, string> {
 }
 
 function normalizeEndpoint(url: string): string {
-  return url.trim().replace(/\/+$/, "");
+  return normalizeFoundryEndpoint(url);
 }
 
 function buildSystemOnePayload(
@@ -185,7 +193,7 @@ function buildSystemOnePayload(
     qMap[q.id] = entry;
   }
   return {
-    model: deployment || "Decision-1",
+    model: deployment || DEFAULT_DECISION_DEPLOYMENT,
     state,
     questions: qMap,
   };
@@ -303,11 +311,11 @@ export async function callDecision1Browser(
       "Azure Foundry Endpoint is not configured. Click 'Azure Settings' in the top bar to configure your endpoint."
     );
   }
-  const deployment = cfg.decisionDeployment.trim() || "Decision-1";
+  const deployment = cfg.decisionDeployment.trim() || DEFAULT_DECISION_DEPLOYMENT;
   const payload = buildSystemOnePayload(state, questions, deployment);
   const t0 = performance.now();
 
-  const res = await fetch(`${baseUrl}/providers/microsoft/v1/systemone`, {
+  const res = await tracedBrowserFetch(`${baseUrl}/providers/microsoft/v1/systemone`, {
     method: "POST",
     headers: getAuthHeaders(cfg),
     body: JSON.stringify(payload),
@@ -316,7 +324,7 @@ export async function callDecision1Browser(
   if (!res.ok) {
     const errText = await res.text();
     throw new Error(
-      `Microsoft-Decision-1 HTTP ${res.status}: ${errText.slice(0, 300)}`
+      `Microsoft-Decision-1.1 HTTP ${res.status}: ${errText.slice(0, 300)}`
     );
   }
   const data = await res.json();
@@ -324,7 +332,7 @@ export async function callDecision1Browser(
   return {
     ok: true,
     status: res.status,
-    model: data.model || `Microsoft-Decision-1 (${deployment})`,
+    model: data.model || `Microsoft-Decision-1.1 (${deployment})`,
     endpointUsed: baseUrl,
     latency_ms,
     answers: normalizeDecision1Answers(rawDecisions, questions),
@@ -388,7 +396,7 @@ Return JSON of shape:
 }`;
 
   const t0 = performance.now();
-  const res = await fetch(`${baseUrl}/openai/v1/responses`, {
+  const res = await tracedBrowserFetch(`${baseUrl}/openai/v1/responses`, {
     method: "POST",
     headers: getAuthHeaders(cfg),
     body: JSON.stringify({
@@ -484,7 +492,7 @@ Return ONLY valid JSON of shape:
 }`;
 
   const t0 = performance.now();
-  const res = await fetch(`${baseUrl}/openai/v1/responses`, {
+  const res = await tracedBrowserFetch(`${baseUrl}/openai/v1/responses`, {
     method: "POST",
     headers: getAuthHeaders(cfg),
     body: JSON.stringify({
@@ -574,7 +582,7 @@ export async function streamConversationBrowser(
 ): Promise<void> {
   const baseUrl = normalizeEndpoint(cfg.endpoint || cfg.decisionEndpoint);
   const deployment = cfg.terraDeployment.trim() || "gpt-6.1-terra";
-  const res = await fetch(`${baseUrl}/openai/v1/responses`, {
+  const res = await tracedBrowserFetch(`${baseUrl}/openai/v1/responses`, {
     method: "POST",
     headers: getAuthHeaders(cfg),
     body: JSON.stringify({
@@ -1035,7 +1043,7 @@ export class BrowserFoundryDispatcher {
       this.emit("agent_step", {
         step: "gate_start",
         icon: "⚡",
-        text: `Evaluating <b>${gates.length} policy gates</b> on <code>Microsoft-Decision-1</code> vs <code>${cfg.terraDeployment}</code>`,
+        text: `Evaluating <b>${gates.length} policy gates</b> on <code>Microsoft-Decision-1.1</code> vs <code>${cfg.terraDeployment}</code>`,
         status: "run",
         elapsed_ms: 0,
       });
@@ -1055,7 +1063,7 @@ export class BrowserFoundryDispatcher {
       this.emit("agent_step", {
         step: "gate_done",
         icon: "✓",
-        text: `Policy gates evaluated: <b>Decision-1 in ${d1GateRes.latency_ms}ms</b> vs <b>${cfg.terraDeployment} in ${terraGateRes.latency_ms}ms</b>`,
+        text: `Policy gates evaluated: <b>Decision-1.1 in ${d1GateRes.latency_ms}ms</b> vs <b>${cfg.terraDeployment} in ${terraGateRes.latency_ms}ms</b>`,
         status: "ok",
         elapsed_ms: d1GateRes.latency_ms,
       });

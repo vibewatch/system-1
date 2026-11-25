@@ -1,9 +1,9 @@
-# Foundry // System-One (`Microsoft-Decision-1` Showcase & Benchmark Suite)
+# Foundry // System-One (`Microsoft-Decision-1.1` Showcase & Benchmark Suite)
 
 - **Live GitHub Pages (Frontend-Only Mode)**: **`https://system-1.genisisiq.com/`**
 - **Repository**: **`https://github.com/vibewatch/system-1`**
 
-Interactive Next.js 15 enterprise showcase and head-to-head correctness & cost benchmark comparing **`Microsoft-Decision-1`** (`/providers/microsoft/v1/systemone`) against generative LLMs (such as **`gpt-6.1-terra`** via `/openai/v1/responses`) on **Azure AI Foundry** with **Microsoft Entra ID** authentication.
+Interactive Next.js 15 enterprise showcase and head-to-head correctness & cost benchmark comparing **`Microsoft-Decision-1.1`** (`/providers/microsoft/v1/systemone`) against generative LLMs (such as **`gpt-6.1-terra`** via `/openai/v1/responses`) on **Azure AI Foundry** with **Microsoft Entra ID** or API-key authentication.
 
 ## Key Capabilities
 
@@ -11,7 +11,7 @@ Interactive Next.js 15 enterprise showcase and head-to-head correctness & cost b
    - Fresh visitors use 41 real Azure recordings covering 17 solutions, four conversations, three triage rates and the claims workflow. Replay makes no Azure, WebSocket or backend API calls.
    - Open **Demo replay** to pause/resume/stop, change speed, import/export a portable version-1 JSON file or switch to live mode. Original answers, latency, usage and queue timing are preserved; changed inputs require live execution.
    - Live execution defaults to **Frontend + Backend Server**, using `DefaultAzureCredential` / the logged-in Azure CLI.
-   - Connect directly from your browser to your own Azure AI Foundry endpoint (`https://<your-resource>.cognitiveservices.azure.com`) and configure your **`Microsoft-Decision-1`** and comparison LLM deployments.
+   - Connect directly from your browser to an Azure AI Foundry endpoint and configure your **`Microsoft-Decision-1.1`** and comparison LLM deployments. Previously saved `Decision-1` deployment names migrate to `Decision-1.1`.
    - Authenticate via **Microsoft Entra ID OAuth2 PKCE Popup** (`@azure/msal-browser`), **Entra ID Bearer Token** (`az account get-access-token --resource https://cognitiveservices.azure.com --query accessToken -o tsv`), or **Foundry API Key**.
    - Browser-only execution remains selectable in **Connection settings**. Replay and live-transport preferences are separate.
 
@@ -32,13 +32,15 @@ PORT=3000 npm run start
 
 Open **`http://localhost:3000`** to use recorded demos without signing in. Open **Demo replay → Return to live mode** for new evaluations; **Connection settings** selects the live transport and browser credentials.
 
-For backend live execution, put `AZURE_FOUNDRY_ENDPOINT=https://<your-foundry-resource>.cognitiveservices.azure.com` in an ignored `.env.local` file and authenticate with `az login`. Optionally set `AZURE_FALLBACK_DECISION_ENDPOINT` for a separate Decision-1 resource. Production resource addresses are not frontend defaults or public replay metadata.
+Decision calls default to deployment `Decision-1.1` at `https://icsuaaije.services.ai.azure.com/models`. The `/models` suffix is removed before calling `/providers/microsoft/v1/systemone` or `/openai/v1/responses`. Set `AZURE_FOUNDRY_ENDPOINT` to the resource hosting the comparison LLM; it need not be the Decision resource. Override `AZURE_DECISION_ENDPOINT`, `AZURE_DECISION_DEPLOYMENT`, or `AZURE_TERRA_DEPLOYMENT` in an ignored `.env.local` file. Browser settings likewise keep the main comparison endpoint separate from the Decision endpoint. Authenticate with `az login` (or a managed identity), or set `AZURE_DECISION_API_KEY` securely for Decision requests (`AZURE_FOUNDRY_API_KEY` for the comparison resource). Never put keys in source code or `NEXT_PUBLIC_*` variables. Optionally set `AZURE_FALLBACK_DECISION_ENDPOINT` for a separate Decision-1.1 resource.
+
+Every live model HTTP attempt is recorded, including health probes, comparison requests, extraction, streamed responses, fallback attempts and failures. Backend traces append to ignored `data/traces/model-calls.jsonl` (override with `AZURE_TRACE_FILE`). Browser-only traces persist in IndexedDB and can be downloaded using **Connection settings → Export browser model traces**. Traces include request payloads, raw responses (including SSE events), status, timing and errors; authentication headers are never recorded and credentials/resource identities are redacted. Review traces before sharing: prompts and outputs may still contain confidential prose. Browser storage can be cleared or limited by the browser.
 
 ## Replay recordings
 
-The in-app **Watch technical demo** opens a 2:37 conversational English walkthrough of Stream and Triage, with English captions and chapter navigation. It introduces Decision-1, follows a frustrated broadband customer and a busy support inbox, then explains the decisions, final outcomes and practical advantages in business terms. It uses original recorded Azure events at 1× speed, with pauses and cuts for narration, and makes no live model calls. The [1080p MP4](public/demo-microsoft-decision-1.mp4) contains no music, promotional narration, or backend concurrency and worker-limit explanations.
+The in-app **Watch technical demo** opens a historical 2:37 conversational English walkthrough of Decision-1 Stream and Triage, with English captions and chapter navigation. It follows a frustrated broadband customer and a busy support inbox, then explains the decisions, final outcomes and practical advantages in business terms. The video retains its original Decision-1 model labels and results; it is not a Decision-1.1 recording. It uses original recorded Azure events at 1× speed, with pauses and cuts for narration, and makes no live model calls. The [1080p MP4](public/demo-microsoft-decision-1.mp4) contains no music, promotional narration, or backend concurrency and worker-limit explanations.
 
-`public/replays/showcase.json` contains original Azure outputs and event offsets, reused from the project's recorded demonstration history. No responses are synthesized during playback. Infrastructure endpoints and common authentication/identity metadata are redacted recursively on import, recording/checkpoint writes and export, without changing answers or measurements. Imported files remain in the current tab; a reload restores the included bundle. Redaction cannot identify every kind of confidential prose: review custom inputs and outputs before sharing exported files.
+`public/replays/showcase.json` contains 41 freshly recorded Decision-1.1 / gpt-6.1-terra Azure workflows and their original event offsets. No responses are synthesized during playback. Infrastructure endpoints and common authentication/identity metadata are redacted recursively on import, recording/checkpoint writes and export, without changing answers or measurements. Imported files remain in the current tab; a reload restores the included bundle. Redaction cannot identify every kind of confidential prose: review custom inputs and outputs before sharing exported files.
 
 Redaction covers the current published assets and shared replay files. Existing Git history and previously downloaded copies are not rewritten.
 

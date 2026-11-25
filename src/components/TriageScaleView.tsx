@@ -177,7 +177,7 @@ export default function TriageScaleView({
     ? (terraDoneCount / elapsedSec).toFixed(1)
     : "0.0";
 
-  // Aggregated dashboard metrics from Decision-1 results
+  // Aggregated dashboard metrics from Decision-1.1 results
   const deptCounts: Record<string, number> = {
     hardware_defect: 0,
     shipping_damage: 0,
@@ -274,7 +274,7 @@ export default function TriageScaleView({
               }}
             >
               <div>
-                <span className="badge">MICROSOFT-DECISION-1</span>
+                <span className="badge">MICROSOFT-DECISION-1.1</span>
                 <span
                   style={{
                     font: "500 var(--font-xs) var(--mono)",
@@ -404,13 +404,13 @@ export default function TriageScaleView({
         {d1FinishInfo && (
           <div className="reveal" style={{ marginBottom: 16, marginTop: 0 }}>
             <div className="verdict-big">
-              At Microsoft-Decision-1 completion ({N}/{N}) ·{" "}
+              At Microsoft-Decision-1.1 completion ({N}/{N}) ·{" "}
               <span style={{ color: "var(--terra-bright)" }}>
                 {comparisonModelName} had {d1FinishInfo.terraRemaining} outstanding
               </span>
             </div>
             <div style={{ color: "var(--text-muted)", fontSize: "var(--font-md)" }}>
-              Decision-1 average end-to-end queue + inference wait:{" "}
+              Decision-1.1 average end-to-end queue + inference wait:{" "}
               <b>{(d1FinishInfo.d1AvgWait / 1000).toFixed(1)}s</b>. This snapshot
               includes running requests. The lanes use 8 and 4 workers,
               respectively; this is not an equal-concurrency benchmark.

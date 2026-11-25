@@ -11,6 +11,7 @@ import {
 import { CustomSelect } from "./CustomSelect";
 import { IconButton } from "./IconButton";
 import { X } from "lucide-react";
+import { exportBrowserTraces } from "@/lib/browser-trace";
 
 interface Props {
   open: boolean;
@@ -95,7 +96,7 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
     try {
       const res = await callDecision1Browser(
         draft,
-        "Verify Microsoft-Decision-1 deployment readiness.",
+        "Verify Microsoft-Decision-1.1 deployment readiness.",
         [
           {
             id: "ready",
@@ -272,12 +273,12 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                       marginBottom: 4,
                     }}
                   >
-                    OPTIONAL SEPARATE DECISION-1 ENDPOINT (BLANK = SAME)
+                    OPTIONAL SEPARATE DECISION-1.1 ENDPOINT (BLANK = SAME)
                   </div>
                   <input
                     className="q-input"
                     style={{ fontFamily: "var(--mono)", fontSize: "var(--font-xs)" }}
-                    placeholder="Leave blank if Decision-1 is on the same endpoint"
+                    placeholder="Leave blank if Decision-1.1 is on the same endpoint"
                     value={draft.decisionEndpoint}
                     onChange={(e) =>
                       update({ decisionEndpoint: e.target.value })
@@ -302,12 +303,12 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
                       marginBottom: 4,
                     }}
                   >
-                    MICROSOFT-DECISION-1 DEPLOYMENT NAME
+                    MICROSOFT-DECISION-1.1 DEPLOYMENT NAME
                   </div>
                   <input
                     className="q-input"
                     style={{ fontFamily: "var(--mono)", fontSize: "var(--font-xs)" }}
-                    placeholder="Decision-1"
+                    placeholder="Decision-1.1"
                     value={draft.decisionDeployment}
                     onChange={(e) =>
                       update({ decisionDeployment: e.target.value })
@@ -517,6 +518,12 @@ export function AzureSettingsModal({ open, config, onSave, onClose }: Props) {
               </div>
             </div>
           )}
+
+          <button type="button" className="ghost" onClick={() => {
+            void exportBrowserTraces().catch((error) => setStatusMsg({ ok: false, text: String(error) }));
+          }}>
+            Export browser model traces
+          </button>
 
           {statusMsg && (
             <div

@@ -2,15 +2,30 @@ import { DefaultAzureCredential } from "@azure/identity";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { DecisionQuestion } from "./demo-data";
+import { DEFAULT_DECISION_DEPLOYMENT, DEFAULT_DECISION_ENDPOINT, normalizeFoundryEndpoint } from "./deployment";
+import { tracedFetch } from "./server-trace";
 
 const execFileAsync = promisify(execFile);
 
 export const DEFAULT_FOUNDRY_ENDPOINT =
   process.env.AZURE_FOUNDRY_ENDPOINT || "";
+export const DECISION_ENDPOINT = process.env.AZURE_DECISION_ENDPOINT || DEFAULT_DECISION_ENDPOINT;
 export const FALLBACK_DECISION_ENDPOINT =
   process.env.AZURE_FALLBACK_DECISION_ENDPOINT || "";
-export const DECISION_DEPLOYMENT = process.env.AZURE_DECISION_DEPLOYMENT || "Decision-1";
+export const DECISION_DEPLOYMENT = process.env.AZURE_DECISION_DEPLOYMENT || DEFAULT_DECISION_DEPLOYMENT;
 export const TERRA_DEPLOYMENT = process.env.AZURE_TERRA_DEPLOYMENT || "gpt-6.1-terra";
+
+export async function getFoundryAuthHeaders(
+  endpoint = DEFAULT_FOUNDRY_ENDPOINT,
+  tokenProvider = getEntraToken
+): Promise<Record<string, string>> {
+  const base = normalizeFoundryEndpoint(endpoint);
+  const comparisonBase = normalizeFoundryEndpoint(DEFAULT_FOUNDRY_ENDPOINT);
+  const key = base === normalizeFoundryEndpoint(DECISION_ENDPOINT)
+    ? process.env.AZURE_DECISION_API_KEY?.trim() || (base === comparisonBase ? process.env.AZURE_FOUNDRY_API_KEY?.trim() : undefined)
+    : base === comparisonBase ? process.env.AZURE_FOUNDRY_API_KEY?.trim() : undefined;
+  return key ? { "api-key": key } : { Authorization: `Bearer ${await tokenProvider()}` };
+}
 
 const TOKEN_SCOPE = "https://cognitiveservices.azure.com/.default";
 const credential = new DefaultAzureCredential();
@@ -209,8 +224,7 @@ export async function callDecision1(
   questions: DecisionQuestion[],
   customEndpoint?: string
 ): Promise<DecisionRunResult> {
-  const token = await getEntraToken();
-  const primaryBase = (customEndpoint || DEFAULT_FOUNDRY_ENDPOINT).replace(/\/+$/, "");
+  const primaryBase = normalizeFoundryEndpoint(customEndpoint || DECISION_ENDPOINT);
   const payload = buildSystemOnePayload(state, questions, DECISION_DEPLOYMENT);
   const bodyStr = JSON.stringify(payload);
 
@@ -222,7 +236,7 @@ export async function callDecision1(
   if (!endpointsToTry.includes(primaryBase)) {
     endpointsToTry.push(primaryBase);
   }
-  const fallbackClean = FALLBACK_DECISION_ENDPOINT.replace(/\/+$/, "");
+  const fallbackClean = normalizeFoundryEndpoint(FALLBACK_DECISION_ENDPOINT);
   if (fallbackClean && !endpointsToTry.includes(fallbackClean)) {
     endpointsToTry.push(fallbackClean);
   }
@@ -233,12 +247,13 @@ export async function callDecision1(
   for (const base of endpointsToTry) {
     const t0 = performance.now();
     try {
-      const res = await fetch(`${base}/providers/microsoft/v1/systemone`, {
+      const auth = await getFoundryAuthHeaders(base);
+      const res = await tracedFetch(`${base}/providers/microsoft/v1/systemone`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
-          Authorization: `Bearer ${token}`,
+          ...auth,
         },
         body: bodyStr,
       });
@@ -262,7 +277,7 @@ export async function callDecision1(
         return {
           ok: false,
           status: res.status,
-          model: "Microsoft-Decision-1",
+          model: "Microsoft-Decision-1.1",
           endpointUsed: base,
           latency_ms,
           usage: { input_tokens: 0, output_tokens: 0 },
@@ -287,7 +302,7 @@ export async function callDecision1(
       return {
         ok: true,
         status: res.status,
-        model: String(data.model || "microsoft-decision-1"),
+        model: String(data.model || "microsoft-decision-1.1"),
         endpointUsed: base,
         latency_ms,
         usage: {
@@ -306,7 +321,7 @@ export async function callDecision1(
   return {
     ok: false,
     status: lastStatus,
-    model: "Microsoft-Decision-1",
+    model: "Microsoft-Decision-1.1",
     endpointUsed: primaryBase,
     latency_ms: 0,
     usage: { input_tokens: 0, output_tokens: 0 },
@@ -335,17 +350,17 @@ export async function callTerraText(
   model: string;
   error?: string;
 }> {
-  const token = await getEntraToken();
-  const base = (customEndpoint || DEFAULT_FOUNDRY_ENDPOINT).replace(/\/+$/, "");
+  const base = normalizeFoundryEndpoint(customEndpoint || DEFAULT_FOUNDRY_ENDPOINT);
+  const auth = await getFoundryAuthHeaders(base);
   const t0 = performance.now();
 
   // Prefer the Responses API before falling back to Chat Completions.
   try {
-    const res = await fetch(`${base}/openai/v1/responses`, {
+    const res = await tracedFetch(`${base}/openai/v1/responses`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        ...auth,
       },
       body: JSON.stringify({
         model: TERRA_DEPLOYMENT,
@@ -382,11 +397,11 @@ export async function callTerraText(
     }
 
     // Fallback to /openai/v1/chat/completions if needed
-    const chatRes = await fetch(`${base}/openai/v1/chat/completions`, {
+    const chatRes = await tracedFetch(`${base}/openai/v1/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+        ...auth,
       },
       body: JSON.stringify({
         model: TERRA_DEPLOYMENT,
@@ -473,7 +488,7 @@ export async function callGptTerraDecision(
     .join("\n");
 
   const systemPrompt =
-    "You are an analytical decision evaluator being compared against Microsoft-Decision-1. Respond ONLY with a valid JSON object containing an \"answers\" key mapping each question ID to its typed decision object. Do not wrap in markdown code fences.";
+    "You are an analytical decision evaluator being compared against Microsoft-Decision-1.1. Respond ONLY with a valid JSON object containing an \"answers\" key mapping each question ID to its typed decision object. Do not wrap in markdown code fences.";
   const userPrompt = `STATE:\n${
     typeof state === "string" ? state : JSON.stringify(state, null, 2)
   }\n\nQUESTIONS TO EVALUATE:\n${schemaPrompt}\n\nReturn JSON: {"answers": { ... }}`;
@@ -558,14 +573,14 @@ export async function streamConversationFromTerra(
   model: string;
   error?: string;
 }> {
-  const token = await getEntraToken();
-  const base = (customEndpoint || DEFAULT_FOUNDRY_ENDPOINT).replace(/\/+$/, "");
+  const base = normalizeFoundryEndpoint(customEndpoint || DEFAULT_FOUNDRY_ENDPOINT);
+  const auth = await getFoundryAuthHeaders(base);
 
-  const res = await fetch(`${base}/openai/v1/responses`, {
+  const res = await tracedFetch(`${base}/openai/v1/responses`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+      ...auth,
     },
     body: JSON.stringify({
       model: TERRA_DEPLOYMENT,

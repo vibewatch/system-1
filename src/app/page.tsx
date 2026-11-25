@@ -517,7 +517,7 @@ export default function HomePage() {
         <section className="guide-strip" aria-label="How to use this showcase">
           <div className="guide-strip-inner">
             <div>
-              <span className="guide-step-num">Why Microsoft-Decision-1?</span>
+              <span className="guide-step-num">Why Microsoft-Decision-1.1?</span>
               <div className="guide-step-title">
                 Deterministic System-1 Decisions in One Forward Pass
               </div>
@@ -536,7 +536,7 @@ export default function HomePage() {
               <p className="guide-step-desc">
                 Pick an enterprise scenario on the left to see what
                 business bottleneck it solves and what capability of{" "}
-                <b>Microsoft-Decision-1</b> it proves.
+                <b>Microsoft-Decision-1.1</b> it proves.
               </p>
             </div>
 

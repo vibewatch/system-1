@@ -14,11 +14,12 @@ import type { DecisionRunResult } from "@/lib/foundry";
 import { CustomSelect } from "./CustomSelect";
 import { IconButton } from "./IconButton";
 import { Copy, Grid2X2, SlidersHorizontal, Trash2, X } from "lucide-react";
+import { normalizeFoundryEndpoint } from "@/lib/deployment";
 
 function buildClientSystemOnePayload(
   state: unknown,
   questions: DecisionQuestion[],
-  deploymentName = "Decision-1"
+  deploymentName = "Decision-1.1"
 ) {
   const qMap: Record<string, Record<string, unknown>> = {};
   for (const q of questions) {
@@ -59,7 +60,7 @@ export default function StudioCompareView({
   subscribeWs,
   wsConnected,
   comparisonModelName = "gpt-6.1-terra",
-  decisionModelName = "Decision-1",
+  decisionModelName = "Decision-1.1",
   replayMode = false,
   endpointUrl = "https://<your-foundry-resource>.cognitiveservices.azure.com",
   allUseCases,
@@ -324,7 +325,7 @@ export default function StudioCompareView({
   const systemOnePayload = buildClientSystemOnePayload(stateText, questions, decisionModelName);
 
   const curlSnippet = `curl --request POST \\
-  --url "${endpointUrl}/providers/microsoft/v1/systemone" \\
+  --url "${normalizeFoundryEndpoint(endpointUrl)}/providers/microsoft/v1/systemone" \\
   --header "Authorization: Bearer $(az account get-access-token --resource https://cognitiveservices.azure.com --query accessToken -o tsv)" \\
   --header "Content-Type: application/json" \\
   --data '${JSON.stringify(systemOnePayload, null, 2).replace(/'/g, "'\\''")}'`;
@@ -493,7 +494,7 @@ export default function StudioCompareView({
                   style={{ color: "var(--primary)" }}
                 >
                   <span>
-                    02 · What This Proves About Microsoft-Decision-1
+                    02 · What This Proves About Microsoft-Decision-1.1
                   </span>
                 </div>
                 <p className="wb-purpose-body">{narrative.whatItProves}</p>
@@ -607,7 +608,7 @@ export default function StudioCompareView({
                 </span>
                 <div style={{ textAlign: "right", font: "500 var(--font-sm) var(--mono)" }}>
                   <div style={{ color: "var(--primary)", fontWeight: 700 }}>
-                    Decision-1: {d1Ms ? `${d1Ms} ms` : racing ? "running…" : "—"}
+                    Decision-1.1: {d1Ms ? `${d1Ms} ms` : racing ? "running…" : "—"}
                   </div>
                   <div style={{ color: "var(--terra)" }}>
                     {comparisonModelName}:{" "}
@@ -641,7 +642,7 @@ export default function StudioCompareView({
                 </span>
                 <div style={{ textAlign: "right", font: "500 var(--font-sm) var(--mono)" }}>
                   <div style={{ color: "var(--primary)", fontWeight: 700 }}>
-                    Decision-1:{" "}
+                    Decision-1.1:{" "}
                     {d1Result && correctnessSummary.totalQuestions > 0
                       ? `${correctnessSummary.d1Correct}/${correctnessSummary.totalQuestions} pass`
                       : "—"}
@@ -682,7 +683,7 @@ export default function StudioCompareView({
                 </span>
                 <div style={{ textAlign: "right", font: "500 var(--font-sm) var(--mono)" }}>
                   <div style={{ color: "var(--primary)", fontWeight: 700 }}>
-                    Decision-1: ${economicsSummary.d1CostPer1kUsd.toFixed(4)} /
+                    Decision-1.1: ${economicsSummary.d1CostPer1kUsd.toFixed(4)} /
                     1k
                   </div>
                   <div style={{ color: "var(--terra)" }}>
@@ -775,7 +776,7 @@ export default function StudioCompareView({
                       <th>Criterion / Question</th>
                       <th>Type</th>
                       <th>Expected Ground Truth</th>
-                      <th>Microsoft-Decision-1 (Calibrated)</th>
+                      <th>Microsoft-Decision-1.1 (Calibrated)</th>
                       <th>{comparisonModelName} (Baseline)</th>
                       <th>Verification</th>
                     </tr>
@@ -948,7 +949,7 @@ export default function StudioCompareView({
                 <div className="panel winner">
                   <div className="panel-head">
                     <div>
-                      <span className="badge">MICROSOFT-DECISION-1</span>
+                      <span className="badge">MICROSOFT-DECISION-1.1</span>
                       <div
                         style={{
                           font: "500 var(--font-xs) var(--mono)",
@@ -1242,7 +1243,7 @@ export default function StudioCompareView({
                 <div className="panels two">
                   <div className="panel">
                     <div className="panel-head">
-                      <span className="badge">DECISION-1 RAW RESPONSE</span>
+                      <span className="badge">DECISION-1.1 RAW RESPONSE</span>
                     </div>
                     <div className="panel-body">
                       <pre className="code">

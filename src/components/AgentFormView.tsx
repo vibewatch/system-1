@@ -270,14 +270,14 @@ export default function AgentFormView({
         <section className="card">
           <div className="card-head">
             <span className="eyebrow">
-              02 · STEP 1: POLICY GATES (MICROSOFT-DECISION-1 VS GPT-6.1-TERRA)
+              02 · STEP 1: POLICY GATES (MICROSOFT-DECISION-1.1 VS GPT-6.1-TERRA)
             </span>
             <div style={{ font: "600 var(--font-xs) var(--mono)" }}>
               {d1Gate && (
                 <span
                   style={{ color: "var(--primary-bright)", marginRight: 12 }}
                 >
-                  Decision-1: {d1Gate.latency_ms}ms
+                  Decision-1.1: {d1Gate.latency_ms}ms
                 </span>
               )}
               {terraGate && (
@@ -408,7 +408,7 @@ export default function AgentFormView({
                 involving your{" "}
                 <b>{filledFields["vehicle"]?.value || "VW Golf"}</b> (
                 <b>{filledFields["registration"]?.value || "LK21 XRT"}</b>).{" "}
-                <b>Microsoft-Decision-1</b> confirmed your claim (repair
+                <b>Microsoft-Decision-1.1</b> confirmed your claim (repair
                 estimate{" "}
                 <b>{filledFields["repair estimate"]?.value || "£2,340"}</b>, no
                 injuries, third-party fault) is{" "}

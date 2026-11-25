@@ -297,7 +297,7 @@ export default function RuntimeView({
         <div className="turn note">
           Click <b>{replayMode ? "Replay conversation" : "Stream Conversation"}</b> to {replayMode ? "replay a recorded" : "generate a live"} customer
           conversation via <code>{comparisonModelName}</code> and watch{" "}
-          <b>Microsoft-Decision-1</b> evaluate successive transcript snapshots{" "}
+          <b>Microsoft-Decision-1.1</b> evaluate successive transcript snapshots{" "}
           {replayMode ? "from the original Azure event timeline." : "over WebSocket."}
         </div>
       );
@@ -447,7 +447,7 @@ export default function RuntimeView({
         </div>
         <p className="hero-copy">
           As a customer or agent conversation {replayMode ? "replays from its recorded timeline" : "streams in over WebSocket"},{" "}
-          <b>Microsoft-Decision-1</b> (
+          <b>Microsoft-Decision-1.1</b> (
           <code>/providers/microsoft/v1/systemone</code>) evaluates typed questions
           alongside <b>{comparisonModelName}</b>. Each model processes the latest
           available snapshot with one request in flight; intermediate snapshots
@@ -509,7 +509,7 @@ export default function RuntimeView({
             </span>
             <span>·</span>
             <span className="live">
-              Decision-1: <b>{d1Calls}</b> calls (
+              Decision-1.1: <b>{d1Calls}</b> calls (
               {d1Avg ? `${d1Avg}ms avg` : "—"})
             </span>
             <span>·</span>
@@ -585,7 +585,7 @@ export default function RuntimeView({
             <span className="eyebrow">
               02 · DECISIONS ·{" "}
               <span className="hint">
-                Microsoft-Decision-1 (solid) vs {comparisonModelName} (dashed)
+                Microsoft-Decision-1.1 (solid) vs {comparisonModelName} (dashed)
               </span>
             </span>
             <button
@@ -719,14 +719,14 @@ export default function RuntimeView({
                   }}
                 >
                   Each question starts uncertain. When a decision event changes
-                  a <b>Microsoft-Decision-1</b> answer, the update appears here and
+                  a <b>Microsoft-Decision-1.1</b> answer, the update appears here and
                   is pinned inside the transcript.
                 </div>
               </>
             ) : (
               <>
                 <span className="eyebrow">
-                  DECISION-1 CHANGED ITS MIND · WORD {flipcast.words}
+                  DECISION-1.1 CHANGED ITS MIND · WORD {flipcast.words}
                 </span>
                 <div className="fc-line">
                   <span>{flipcast.label}</span>
@@ -742,7 +742,7 @@ export default function RuntimeView({
           {/* Moments Timeline */}
           <div className="card-head sub">
             <span className="eyebrow">
-              MOMENTS WHEN MICROSOFT-DECISION-1 CHANGED ITS MIND
+              MOMENTS WHEN MICROSOFT-DECISION-1.1 CHANGED ITS MIND
             </span>
           </div>
           {moments.length === 0 ? (
@@ -769,10 +769,10 @@ export default function RuntimeView({
               <div className="verdict-big">
                 Stream Complete ·{" "}
                 {d1Avg && terraAvg
-                  ? `Decision-1 averaged ${d1Avg}ms vs ${terraAvg}ms on ${comparisonModelName} (${(
+                  ? `Decision-1.1 averaged ${d1Avg}ms vs ${terraAvg}ms on ${comparisonModelName} (${(
                       terraAvg / Math.max(1, d1Avg)
                     ).toFixed(1)}× faster)`
-                  : `Decision-1 completed ${d1Calls} live evaluations`}
+                  : `Decision-1.1 completed ${d1Calls} live evaluations`}
               </div>
               <span className="eyebrow">
                 THE SCRIPT · RANDOM TWIST & ENDING GIVEN TO {comparisonModelName}
