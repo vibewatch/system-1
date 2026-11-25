@@ -669,6 +669,7 @@ export default function HomePage() {
           subscribeWs={subscribeWs}
           wsConnected={effectiveReady}
           replayMode={replayEnabled}
+          decisionModelName={decisionModelLabel}
           comparisonModelName={comparisonModelLabel}
         />
       </div>

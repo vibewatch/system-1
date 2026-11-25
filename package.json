@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "replay:record": "tsx scripts/record-replays.ts",
     "replay:test": "tsx --test src/lib/replay.test.ts",
-    "test": "tsx --test src/lib/replay.test.ts src/lib/model-trace.test.ts src/lib/comparison-evidence.test.ts"
+    "test": "tsx --test src/lib/replay.test.ts src/lib/model-trace.test.ts src/lib/comparison-evidence.test.ts src/lib/claims.test.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.7.0",

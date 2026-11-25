@@ -1,429 +1,175 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { CLAIM_DEMO } from "@/lib/demo-data";
+import React, { useEffect, useRef, useState } from "react";
+import { CLAIM_CASES, CLAIM_POLICY, CLAIM_QUESTIONS, claimRequest, type ClaimField, type ClaimOutcome } from "@/lib/claims";
+import { computeCorrectnessSummary, type StudioSample } from "@/lib/demo-data";
+import { prioritizeQuestions } from "@/lib/comparison-evidence";
 import type { DecisionRunResult } from "@/lib/foundry";
-import { IconButton } from "./IconButton";
-import { Pencil } from "lucide-react";
+import { ComparisonProof } from "./ComparisonProof";
 
-interface AgentFormViewProps {
+interface Props {
   sendWs: (action: string, payload?: Record<string, any>) => boolean;
-  subscribeWs: (
-    handler: (msg: { event: string; data: any; ts: number }) => void
-  ) => () => void;
+  subscribeWs: (handler: (msg: { event: string; data: any; ts: number }) => void) => () => void;
   wsConnected: boolean;
   replayMode?: boolean;
+  decisionModelName?: string;
   comparisonModelName?: string;
 }
 
-interface FilledField {
-  name: string;
-  label: string;
-  value: string;
-  confidence: number;
-  status: "ok" | "review" | "miss";
-  alternatives: string[];
-  spans: Array<{ start: number; end: number; text: string }>;
-}
-
-interface StepLog {
-  icon: string;
-  text: string;
-  status: string;
-  elapsed_ms: number;
-}
-
 export default function AgentFormView({
-  sendWs,
-  subscribeWs,
-  wsConnected,
-  replayMode = false,
-  comparisonModelName = "gpt-6.1-terra",
-}: AgentFormViewProps) {
-  const [emailText, setEmailText] = useState(CLAIM_DEMO.text);
+  sendWs, subscribeWs, wsConnected, replayMode = false,
+  decisionModelName = "Decision-1.1", comparisonModelName = "gpt-6.1-terra",
+}: Props) {
+  const [caseId, setCaseId] = useState(CLAIM_CASES[0].id);
+  const example = CLAIM_CASES.find((item) => item.id === caseId)!;
+  const [content, setContent] = useState(example.content);
   const [running, setRunning] = useState(false);
-  const [d1Gate, setD1Gate] = useState<DecisionRunResult | null>(null);
-  const [terraGate, setTerraGate] = useState<DecisionRunResult | null>(null);
-  const [filledFields, setFilledFields] = useState<Record<string, FilledField>>(
-    {}
-  );
-  const [steps, setSteps] = useState<StepLog[]>([]);
-  const [focusedName, setFocusedName] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [decision, setDecision] = useState<DecisionRunResult | null>(null);
+  const [baseline, setBaseline] = useState<DecisionRunResult | null>(null);
+  const [fields, setFields] = useState<ClaimField[]>([]);
+  const [extractionError, setExtractionError] = useState("");
+  const [extractionMs, setExtractionMs] = useState<number | null>(null);
+  const [outcome, setOutcome] = useState<ClaimOutcome | null>(null);
+  const [totalMs, setTotalMs] = useState<number | null>(null);
+  const [notice, setNotice] = useState("");
+  const [focused, setFocused] = useState<string | null>(null);
+  const activeRun = useRef<string | null>(null);
+  const isFixture = content === example.content;
+  const expected = isFixture ? example.expected : undefined;
+  const summary = computeCorrectnessSummary(CLAIM_QUESTIONS, expected, decision?.ok ? decision.answers : undefined, baseline?.ok ? baseline.answers : undefined);
+  const proofSample: StudioSample = {
+    id: "claims-policy", label: "Claims policy gates", industry: "Insurance & Claims", origin: "industry",
+    category: "Processing policy", description: "Same-input policy checks; extraction is a separate stage.",
+    content, questions: CLAIM_QUESTIONS, codeRule: "applyVerifiedProcessingPolicy();",
+  };
 
+  const reset = () => {
+    activeRun.current = null;
+    setDecision(null); setBaseline(null); setFields([]); setOutcome(null);
+    setExtractionError(""); setExtractionMs(null); setTotalMs(null); setNotice(""); setFocused(null);
+  };
+  useEffect(() => subscribeWs(({ event, data }) => {
+    if (!activeRun.current) return;
+    if (event === "error") {
+      setNotice(data.message || "Request failed."); setRunning(false); activeRun.current = null;
+      return;
+    }
+    if (data.runId !== activeRun.current) return;
+    if (event === "claim_gate_result") {
+      if (data.tier === "decision1") setDecision(data.result);
+      else if (data.tier === "terra") setBaseline(data.result);
+    } else if (event === "claim_extraction_result") {
+      setFields(data.fields || []); setExtractionError(data.error || ""); setExtractionMs(data.latency_ms);
+    } else if (event === "agent_done") {
+      setRunning(false); activeRun.current = null;
+      if (data.cancelled) {
+        setOutcome(null); setNotice("Run cancelled. No final processing decision."); return;
+      }
+      setOutcome(data.outcome || null); setTotalMs(data.elapsed_ms);
+      if (data.comparisonFailed) setNotice("The comparison request failed. Its absence is not evidence of a model win.");
+      if (data.error) setNotice(data.error);
+    }
+  }), [subscribeWs]);
   useEffect(() => {
-    return subscribeWs(({ event, data }) => {
-      if (event === "agent_step") {
-        setSteps((prev) => [...prev, data]);
-      } else if (event === "agent_gates_done") {
-        setD1Gate(data.decision1);
-        setTerraGate(data.terra);
-      } else if (event === "agent_field_filled") {
-        setFilledFields((prev) => ({
-          ...prev,
-          [data.name]: {
-            name: data.name,
-            label: data.label,
-            value: data.value,
-            confidence: data.confidence,
-            status: data.status,
-            alternatives: data.alternatives || [],
-            spans: data.spans || [],
-          },
-        }));
-      } else if (event === "agent_done") {
-        setRunning(false);
-        setDone(!data.cancelled);
-      }
-    });
-  }, [subscribeWs]);
+    if (!wsConnected && activeRun.current) {
+      activeRun.current = null; setRunning(false); setOutcome(null); setNotice("Connection unavailable. No final processing decision.");
+    }
+  }, [wsConnected]);
 
-  const runAgent = () => {
-    if (!wsConnected) return;
+  const run = () => {
+    reset();
+    const runId = crypto.randomUUID();
+    activeRun.current = runId;
     setRunning(true);
-    setD1Gate(null);
-    setTerraGate(null);
-    setFilledFields({});
-    setSteps([]);
-    setDone(false);
-    if (!sendWs("run_agent_form", { content: emailText })) setRunning(false);
+    if (!sendWs("run_agent_form", claimRequest(content, isFixture ? caseId : "edited", runId))) {
+      activeRun.current = null; setRunning(false); setNotice("No recording or connection matches this request.");
+    }
+  };
+  const focusedField = fields.find((field) => field.name === focused && field.start >= 0);
+  const verdict = (result: DecisionRunResult | null, id: string, matches: boolean) => {
+    if (result && !result.ok) return <span className="claims-answer fail">Request failed</span>;
+    if (!result) return <span className="claims-answer">{running ? "Waiting..." : "Not run"}</span>;
+    const answer = result.answers[id];
+    return <span className={`claims-answer ${expected ? matches ? "match" : "fail" : ""}`}>
+      <b>{answer?.key ?? answer?.label ?? "No answer"}</b>
+      <small>{expected ? matches ? "Matches reference" : "Reference mismatch" : "Not scored"}
+        {answer ? ` · model confidence ${Math.round(answer.confidence * 100)}%` : ""}</small>
+    </span>;
   };
 
-  const renderHighlightedEmail = () => {
-    const allSpans: Array<{
-      start: number;
-      end: number;
-      name: string;
-      label: string;
-      confidence: number;
-      status: string;
-    }> = [];
-
-    Object.values(filledFields).forEach((f) => {
-      (f.spans || []).forEach((sp) => {
-        if (
-          sp.start >= 0 &&
-          sp.end <= emailText.length &&
-          sp.end > sp.start
-        ) {
-          allSpans.push({
-            start: sp.start,
-            end: sp.end,
-            name: f.name,
-            label: f.label,
-            confidence: f.confidence,
-            status: f.status,
-          });
-        }
-      });
-    });
-
-    allSpans.sort((a, b) => a.start - b.start);
-
-    if (allSpans.length === 0) {
-      return (
-        <textarea
-          value={emailText}
-          onChange={(e) => setEmailText(e.target.value)}
-          style={{ minHeight: 380 }}
-        />
-      );
-    }
-
-    const nodes: React.ReactNode[] = [];
-    let cur = 0;
-    allSpans.forEach((sp, idx) => {
-      if (sp.start < cur) return;
-      if (sp.start > cur) {
-        nodes.push(emailText.slice(cur, sp.start));
-      }
-      nodes.push(
-        <mark
-          key={`sp-${idx}`}
-          className={`src ${sp.status === "review" ? "review" : ""} ${
-            focusedName === sp.name ? "focus" : ""
-          }`}
-          onClick={() => setFocusedName(sp.name)}
-          title={`${sp.label} (${Math.round(sp.confidence * 100)}%)`}
-        >
-          {emailText.slice(sp.start, sp.end)}
-        </mark>
-      );
-      cur = sp.end;
-    });
-    if (cur < emailText.length) {
-      nodes.push(emailText.slice(cur));
-    }
-
-    return (
-      <div>
-        <div
-          style={{
-            whiteSpace: "pre-wrap",
-            background: "var(--bg-input)",
-            border: "1px solid var(--border)",
-            borderRadius: 9,
-            padding: 14,
-            lineHeight: 1.68,
-            maxHeight: 420,
-            overflow: "auto",
-          }}
-        >
-          {nodes}
-        </div>
-        <IconButton label="Edit raw email text" icon={<Pencil size={16} />} tag="Edit" onClick={() => setFilledFields({})} style={{ marginTop: 8 }} />
-      </div>
-    );
-  };
-
-  const filledList = Object.values(filledFields);
-  const autoFilledCount = filledList.filter((f) => f.status === "ok").length;
-  const reviewCount = filledList.filter((f) => f.status === "review").length;
-  const missingCount = filledList.filter((f) => f.status === "miss").length;
-
-  return (
-    <>
-      <section className="hero-banner">
-        <div>
-          <p className="eyebrow">
-            04 · AGENT POLICY GATE & AUTOMATED CLAIM FORM
-          </p>
-          <h1>
-            One unstructured email in.{" "}
-            <strong>Policy gates + 13-field form out.</strong>
-          </h1>
-        </div>
-        <button
-          className="primary"
-          onClick={runAgent}
-          disabled={running || !wsConnected}
-        >
-          {running
-            ? replayMode ? "Replaying claim workflow…" : "Agent Running over WebSocket…"
-            : replayMode ? "▶ Replay claim workflow" : `▶ Run Claim Agent · ${comparisonModelName}`}
-        </button>
+  return <main className="claims-view">
+    <header className="claims-heading">
+      <div><span className="eyebrow">Evidence-first claims intake</span><h1>Which model makes the right processing decision?</h1>
+        <p>Compare identical policy checks side by side. Then inspect source-backed fields and the application&apos;s safe next action.</p></div>
+      <button className="claims-run" disabled={!wsConnected || running || !content.trim() || (replayMode && !isFixture)} onClick={run}>
+        {running ? "Processing..." : replayMode ? "Replay this claim" : "Compare this claim"}
+      </button>
+    </header>
+    <div className="claims-input-grid">
+      <section className="claims-card">
+        <label htmlFor="claim-case">Synthetic policy cases</label>
+        <select id="claim-case" value={caseId} disabled={running} onChange={(event) => {
+          reset(); setCaseId(event.target.value); setContent(CLAIM_CASES.find((item) => item.id === event.target.value)!.content);
+        }}>{CLAIM_CASES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
+        <label htmlFor="claim-email">Customer email {isFixture ? "(reference available)" : "(edited; no reference score)"}</label>
+        <textarea id="claim-email" value={content} disabled={running} onChange={(event) => { reset(); setContent(event.target.value); }} />
+        {replayMode && !isFixture && <p role="status">Edited input requires live mode. Replay does not invent new model responses.</p>}
       </section>
-
-      <main className="layout split-5-7">
-        {/* Left: Incoming Customer Email + Agent Trace */}
-        <section className="card">
-          <div className="card-head">
-            <span className="eyebrow">
-              01 · INCOMING CLAIM EMAIL{" "}
-              <span className="hint">
-                Click any field to locate source span
-              </span>
-            </span>
-          </div>
-          {renderHighlightedEmail()}
-
-          <div className="card-head sub">
-            <span className="eyebrow">AGENT EXECUTION LOG (WEBSOCKET)</span>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-              fontSize: "var(--font-sm)",
-            }}
-          >
-            {steps.length === 0 ? (
-              <span style={{ color: "var(--text-dim)" }}>
-                Click <b>Run Claim Agent</b> to watch real-time policy gate &
-                extraction steps.
-              </span>
-            ) : (
-              steps.map((s, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    padding: "5px 8px",
-                    background: "var(--bg-input)",
-                    borderRadius: 6,
-                  }}
-                >
-                  <span
-                    dangerouslySetInnerHTML={{
-                      __html: `${s.icon} ${s.text}`,
-                    }}
-                  />
-                  <span
-                    style={{
-                      font: "500 var(--font-xs) var(--mono)",
-                      color: "var(--text-muted)",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    +{s.elapsed_ms}ms
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-
-        {/* Right: Policy Gates + Motor Claim Form + Reply Draft */}
-        <section className="card">
-          <div className="card-head">
-            <span className="eyebrow">
-              02 · STEP 1: POLICY GATES (MICROSOFT-DECISION-1.1 VS GPT-6.1-TERRA)
-            </span>
-            <div style={{ font: "600 var(--font-xs) var(--mono)" }}>
-              {d1Gate && (
-                <span
-                  style={{ color: "var(--primary-bright)", marginRight: 12 }}
-                >
-                  Decision-1.1: {d1Gate.latency_ms}ms
-                </span>
-              )}
-              {terraGate && (
-                <span style={{ color: "var(--terra-bright)" }}>
-                  {comparisonModelName}: {terraGate.latency_ms}ms
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="dq-grid" style={{ marginBottom: 16 }}>
-            {CLAIM_DEMO.gates.map((g) => {
-              const d1Ans = d1Gate?.answers?.[g.id];
-              const trAns = terraGate?.answers?.[g.id];
-              const pct = d1Ans ? Math.round(d1Ans.value * 100) : 0;
-              const cls = d1Ans?.cls || "";
-              return (
-                <div key={g.id} className="dq">
-                  <div className="dq-head">
-                    <span className="dq-label">{g.label}</span>
-                    <span className={`dq-ans ${cls}`}>
-                      {d1Ans ? d1Ans.label : "—"}
-                    </span>
-                  </div>
-                  <div
-                    className={`dq-meter ${g.type === "score" ? "scale" : cls}`}
-                  >
-                    <i
-                      style={
-                        g.type === "score"
-                          ? { left: `${pct}%` }
-                          : { width: `${pct}%` }
-                      }
-                    />
-                  </div>
-                  <div className="dq-foot">
-                    <span>D1: {d1Ans ? d1Ans.detail : "—"}</span>
-                    <span style={{ color: "var(--terra-bright)" }}>
-                      Terra: {trAns ? trAns.label : "—"}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="card-head sub">
-            <span className="eyebrow">
-              03 · STEP 2: MOTOR CLAIM FORM · AU-77120-K
-            </span>
-            {filledList.length > 0 && (
-              <span
-                style={{
-                  font: "600 var(--font-xs) var(--mono)",
-                  color: "var(--text-muted)",
-                }}
-              >
-                <b style={{ color: "var(--primary-bright)" }}>
-                  {autoFilledCount}
-                </b>{" "}
-                auto-filled ·{" "}
-                <b style={{ color: "var(--amber)" }}>{reviewCount}</b> review ·{" "}
-                <b style={{ color: "var(--danger)" }}>{missingCount}</b> missing
-              </span>
-            )}
-          </div>
-
-          <div>
-            {CLAIM_DEMO.form.map((s) => {
-              const f = filledFields[s.name];
-              const stClass = !f
-                ? ""
-                : f.status === "miss"
-                ? "miss"
-                : f.status === "review"
-                ? "review"
-                : "ok";
-              const stText = !f
-                ? "waiting"
-                : f.status === "miss"
-                ? "missing"
-                : f.status === "review"
-                ? `${Math.round(f.confidence * 100)}% · review`
-                : `${Math.round(f.confidence * 100)}%`;
-
-              return (
-                <div
-                  key={s.name}
-                  className="frow"
-                  onClick={() => f?.spans?.length && setFocusedName(s.name)}
-                >
-                  <label>{s.label}</label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={f ? f.value : ""}
-                    placeholder={
-                      f?.status === "miss" ? "— not stated in email —" : "…"
-                    }
-                    style={{
-                      borderColor:
-                        focusedName === s.name
-                          ? "var(--primary-bright)"
-                          : undefined,
-                    }}
-                  />
-                  <span className={`st ${stClass}`}>{stText}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          {done && (
-            <div className="reveal" style={{ marginTop: 16 }}>
-              <span className="eyebrow">
-                04 · STEP 3: AUTOMATED REPLY DRAFT TO POLICYHOLDER
-              </span>
-              <p style={{ margin: "8px 0 0", fontSize: "var(--font-md)" }}>
-                Dear{" "}
-                <b>
-                  {filledFields["policyholder name"]?.value || "Daniel Okoro"}
-                </b>
-                , thank you for reporting the incident on{" "}
-                <b>
-                  {filledFields["date of incident"]?.value ||
-                    "Friday 16 October"}
-                </b>{" "}
-                involving your{" "}
-                <b>{filledFields["vehicle"]?.value || "VW Golf"}</b> (
-                <b>{filledFields["registration"]?.value || "LK21 XRT"}</b>).{" "}
-                <b>Microsoft-Decision-1.1</b> confirmed your claim (repair
-                estimate{" "}
-                <b>{filledFields["repair estimate"]?.value || "£2,340"}</b>, no
-                injuries, third-party fault) is{" "}
-                <b>Fast-Track Eligible</b>. Please reply with your{" "}
-                <b>Police Report Number</b> once it arrives by post so we can
-                finalize settlement with{" "}
-                <b>
-                  {filledFields["other driver insurer"]?.value || "Admiral"}
-                </b>
-                .
-              </p>
-            </div>
-          )}
-        </section>
-      </main>
-    </>
-  );
+      <section className="claims-card claims-policy">
+        <span className="eyebrow">Reference policy, defined before model calls</span><h2>Candidate ≠ approval</h2>
+        <p>Repair estimate <b>strictly below GBP 5,000</b>, explicit <b>no injury</b>, clear <b>third-party fault</b>, and a supplied police reference.</p>
+        <p>Missing police reference → request documents. Injury, high estimate, unknown facts or unclear fault → adjuster. Exactly GBP 5,000 → adjuster.</p>
+        <p>Service failure or inconsistent evidence never authorizes automated processing. Missing customer information is not itself a model error.</p>
+        <details><summary>Complete demonstration policy</summary><p>{CLAIM_POLICY}</p></details>
+      </section>
+    </div>
+    {notice && <p className="claims-notice" role="status">{notice}</p>}
+    <section aria-label="Policy model comparison">
+      <h2>1. Policy checks · both models, same email and rules</h2>
+      <p className="claims-caption">Latency and cost below concern the gate requests only, not form extraction or the whole pipeline. Confidence is model-reported, not independently calibrated.</p>
+      <ComparisonProof sample={proofSample} questions={CLAIM_QUESTIONS} state={content} expected={expected}
+        decision={decision} baseline={baseline} decisionName={decisionModelName} baselineName={comparisonModelName}
+        decisionError={decision && !decision.ok ? decision.error || "Policy request failed" : undefined}
+        baselineError={baseline && !baseline.ok ? baseline.error || "Policy request failed" : undefined}
+        running={running} replayMode={replayMode} />
+      <div className="claims-table-scroll">
+        <table className="claims-evidence"><caption>Reference mismatches and model disagreements appear first. Ties are shown honestly.</caption>
+          <thead><tr><th>Policy check</th><th>Reference / source evidence</th><th>{decisionModelName}</th><th>{comparisonModelName}</th></tr></thead>
+          <tbody>{prioritizeQuestions(CLAIM_QUESTIONS, expected, decision, baseline).map((question) => {
+            const row = summary.rows.find((item) => item.questionId === question.id)!;
+            const mismatch = expected && ((decision?.ok && !row.d1Match) || (baseline?.ok && !row.terraMatch));
+            return <tr key={question.id} className={mismatch ? "claims-mismatch" : ""}>
+              <th>{question.label}<small>{decision?.ok && baseline?.ok ? row.modelsAgree ? "Models agree" : "Models disagree" : "Awaiting paired evidence"}</small></th>
+              <td>{expected ? <><b>{expected[question.id]}</b>{example.evidence[question.id].map((quote) => <q key={quote}>{quote}</q>)}</> : "No reference for edited input"}</td>
+              <td>{verdict(decision, question.id, row.d1Match)}</td><td>{verdict(baseline, question.id, row.terraMatch)}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </section>
+    <div className="claims-results-grid">
+      <section className="claims-card">
+        <h2>2. Source-backed form</h2><p className="claims-caption">Extracted by {comparisonModelName}, not by {decisionModelName}.
+          {extractionMs !== null && ` Extraction request: ${extractionMs} ms.`} Select a field to inspect its quote.</p>
+        {extractionError ? <p className="claims-notice" role="alert">Extraction failed: {extractionError}. This is a service/output failure, not evidence that the customer omitted every field.</p>
+          : fields.length ? <div className="claims-fields">{[...fields].sort((a, b) => Number(a.status === "filled") - Number(b.status === "filled")).map((field) =>
+            <button key={field.name} className={`claims-field ${field.status}`} onClick={() => setFocused(field.name)} aria-pressed={focused === field.name}>
+              <span>{field.label}<small>{field.status === "missing" ? "Not supplied" : field.status === "review" ? "Verify source / value" : "Source-backed"}</small></span>
+              <b>{field.value || "Not supplied"}</b>
+            </button>)}</div> : <p>{running ? "Extracting fields..." : "Run a claim to inspect extracted values."}</p>}
+        {focused && <div className="claims-source"><h3>Source evidence</h3>{focusedField
+          ? <pre>{content.slice(0, focusedField.start)}<mark>{content.slice(focusedField.start, focusedField.end)}</mark>{content.slice(focusedField.end)}</pre>
+          : <p>No verified source quote. Human review is required.</p>}</div>}
+      </section>
+      <section className={`claims-card claims-outcome ${outcome?.status || ""}`} aria-live="polite">
+        <span className="eyebrow">Application rules, not a third model</span><h2>3. Safe next action</h2>
+        {outcome ? <><h3>{outcome.title}</h3><p>{outcome.reason}</p><p className="claims-caption">Uses {decisionModelName} policy facts plus extraction validation.
+          The comparison model&apos;s policy answer is evidence, not an authorization override.
+          {totalMs !== null && ` Whole demonstration pipeline: ${totalMs} ms.`}</p>
+          <h3>Customer reply draft</h3><blockquote>{outcome.reply}</blockquote>
+          <p className="claims-caption">Draft only. Not sent. No coverage decision, payment authorization or fabricated customer details.</p></>
+          : <p>{running ? "Waiting for policy facts and extraction checks. No processing authorized yet." : "No claim processed. No approval implied."}</p>}
+      </section>
+    </div>
+  </main>;
 }

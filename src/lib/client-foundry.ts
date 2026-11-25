@@ -4,8 +4,9 @@ import { PublicClientApplication } from "@azure/msal-browser";
 import { DEFAULT_DECISION_DEPLOYMENT, DEFAULT_DECISION_ENDPOINT, normalizeFoundryEndpoint } from "./deployment";
 import { tracedBrowserFetch } from "./browser-trace";
 import { getTriageWorkers } from "./triage-config";
+import { CLAIM_QUESTIONS } from "./claims";
+import { runClaimWorkflow } from "./claim-workflow";
 import {
-  CLAIM_DEMO,
   DecisionQuestion,
   RUNTIME_SCENARIOS,
   RUNTIME_SYSTEM_PROMPT,
@@ -630,11 +631,28 @@ export async function streamConversationBrowser(
   }
 }
 
+export async function extractClaimBrowser(cfg: AzureClientConfig, system: string, content: string) {
+  const baseUrl = normalizeFoundryEndpoint(cfg.endpoint);
+  const started = performance.now();
+  const res = await tracedBrowserFetch(`${baseUrl}/openai/v1/responses`, {
+    method: "POST", headers: getAuthHeaders(cfg),
+    body: JSON.stringify({ model: cfg.terraDeployment, instructions: system, input: content, max_output_tokens: 1600 }),
+  });
+  if (!res.ok) return { ok: false, text: "", latency_ms: Math.round(performance.now() - started), error: `Extraction HTTP ${res.status}` };
+  const data = await res.json();
+  const text = data.output_text || (data.output || []).flatMap((item: any) => item.content || [])
+    .filter((part: any) => part.type === "output_text").map((part: any) => part.text || "").join("");
+  return { ok: true, text, latency_ms: Math.round(performance.now() - started) };
+}
+
 // Browser-side dispatcher for all interactive flows when in Frontend-Only mode
 export class BrowserFoundryDispatcher {
   private runtimeAbort: AbortController | null = null;
   private triageAbort = false;
   private triageGeneration = 0;
+  private claimGeneration = 0;
+  private claimRunning = false;
+  private claimRunId: unknown;
   private currentConfig: AzureClientConfig;
 
   constructor(
@@ -663,6 +681,11 @@ export class BrowserFoundryDispatcher {
     }
     this.triageAbort = true;
     this.triageGeneration++;
+    this.claimGeneration++;
+    if (this.claimRunning) {
+      this.claimRunning = false;
+      this.emit("agent_done", { cancelled: true, runId: this.claimRunId });
+    }
   }
 
   async dispatch(action: string, payload: Record<string, any> = {}) {
@@ -1052,60 +1075,18 @@ export class BrowserFoundryDispatcher {
     }
 
     if (action === "run_agent_form") {
-      const content = payload.content || CLAIM_DEMO.text;
-      const gates = CLAIM_DEMO.gates;
-      const formSpec = CLAIM_DEMO.form;
-      const fieldsMap: Record<string, string> = {};
-      for (const f of formSpec) fieldsMap[f.name] = f.definition;
-
-      this.emit("agent_step", {
-        step: "gate_start",
-        icon: "⚡",
-        text: `Evaluating <b>${gates.length} policy gates</b> on <code>Microsoft-Decision-1.1</code> vs <code>${cfg.terraDeployment}</code>`,
-        status: "run",
-        elapsed_ms: 0,
+      const generation = ++this.claimGeneration;
+      this.claimRunning = true;
+      this.claimRunId = payload.runId;
+      await runClaimWorkflow(payload, {
+        decisionName: cfg.decisionDeployment, baselineName: cfg.terraDeployment,
+        evaluateDecision: (content) => callDecision1Browser(cfg, content, CLAIM_QUESTIONS),
+        evaluateBaseline: (content) => callTerraDecisionBrowser(cfg, content, CLAIM_QUESTIONS),
+        extract: (system, content) => extractClaimBrowser(cfg, system, content),
+        emit: (event, data) => this.emit(event, data),
+        isCurrent: () => this.claimGeneration === generation,
       });
-
-      const t0 = performance.now();
-      const [d1GateRes, terraGateRes, extractRes] = await Promise.all([
-        callDecision1Browser(cfg, content, gates),
-        callTerraDecisionBrowser(cfg, content, gates),
-        extractEntitiesBrowser(cfg, content, fieldsMap),
-      ]);
-
-      this.emit("agent_gates_done", {
-        decision1: d1GateRes,
-        terra: terraGateRes,
-      });
-
-      this.emit("agent_step", {
-        step: "gate_done",
-        icon: "✓",
-        text: `Policy gates evaluated: <b>Decision-1.1 in ${d1GateRes.latency_ms}ms</b> vs <b>${cfg.terraDeployment} in ${terraGateRes.latency_ms}ms</b>`,
-        status: "ok",
-        elapsed_ms: d1GateRes.latency_ms,
-      });
-
-      for (const spec of formSpec) {
-        const extracted = extractRes.fields[spec.name];
-        const val = extracted?.value || "";
-        const conf = extracted?.confidence || 0;
-        const spans = extracted?.spans || [];
-        this.emit("agent_field_filled", {
-          name: spec.name,
-          label: spec.label,
-          value: val,
-          confidence: conf,
-          status: !val ? "miss" : conf < 0.78 ? "review" : "ok",
-          alternatives: [],
-          spans,
-        });
-        await new Promise((r) => setTimeout(r, 45));
-      }
-
-      this.emit("agent_done", {
-        total_ms: Math.round(performance.now() - t0),
-      });
+      if (this.claimGeneration === generation) this.claimRunning = false;
     }
   }
 }

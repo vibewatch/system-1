@@ -4,7 +4,6 @@ import {
   RUNTIME_SYSTEM_PROMPT,
   SHARED_ENTITY_FIELDS,
   TRIAGE_FEED,
-  CLAIM_DEMO,
   type DecisionQuestion,
 } from "./demo-data";
 import {
@@ -19,6 +18,8 @@ import {
   type ExtractedSpan,
 } from "./foundry";
 import { getTriageWorkers } from "./triage-config";
+import { CLAIM_QUESTIONS } from "./claims";
+import { runClaimWorkflow } from "./claim-workflow";
 
 function send(ws: WebSocket, event: string, data: unknown) {
   if (ws.readyState === ws.OPEN) {
@@ -142,6 +143,7 @@ interface ClientSession {
   triageTimer?: ReturnType<typeof setInterval>;
   triageAborted?: boolean;
   triageGeneration?: number;
+  claimGeneration?: number;
 }
 
 export function attachWebSocketClient(ws: WebSocket) {
@@ -151,6 +153,7 @@ export function attachWebSocketClient(ws: WebSocket) {
     session.runtimeAbort?.abort();
     if (session.triageTimer) clearInterval(session.triageTimer);
     session.triageAborted = true;
+    session.claimGeneration = (session.claimGeneration || 0) + 1;
   });
 
   ws.on("message", async (raw) => {
@@ -554,156 +557,14 @@ export function attachWebSocketClient(ws: WebSocket) {
     }
 
     if (action === "run_agent_form") {
-      const content = String(payload.content || CLAIM_DEMO.text);
-      const t0 = performance.now();
-      const elapsed = () => Math.round(performance.now() - t0);
-
-      send(ws, "agent_step", {
-        icon: "→",
-        text: `Received claim email from <b>${CLAIM_DEMO.from.replace(/\s*<.*>/, "")}</b>`,
-        status: "info",
-        elapsed_ms: elapsed(),
-      });
-
-      send(ws, "agent_step", {
-        icon: "⚡",
-        text: `Evaluating ${CLAIM_DEMO.gates.length} policy & eligibility gates with <b>Microsoft-Decision-1.1</b> vs <b>gpt-6.1-terra</b>…`,
-        status: "running",
-        elapsed_ms: elapsed(),
-      });
-
-      const [d1Gates, terraGates] = await Promise.all([
-        callDecision1(content, CLAIM_DEMO.gates),
-        callGptTerraDecision(content, CLAIM_DEMO.gates),
-      ]);
-
-      send(ws, "agent_gates_done", {
-        decision1: d1Gates,
-        terra: terraGates,
-        elapsed_ms: elapsed(),
-      });
-
-      send(ws, "agent_step", {
-        icon: "✓",
-        text: `<b>Microsoft-Decision-1.1</b> evaluated ${CLAIM_DEMO.gates.length} policy gates in <b>${d1Gates.latency_ms} ms</b> (vs <b>gpt-6.1-terra</b> in <b>${terraGates.latency_ms} ms</b>)`,
-        status: "ok",
-        elapsed_ms: elapsed(),
-      });
-
-      // Extract structured form fields using gpt-6.1-terra
-      const fieldSpecs = CLAIM_DEMO.form.map((f) => `- "${f.name}": ${f.definition}`).join("\n");
-      const sys = `You extract motor insurance claim form fields from an email. Return ONLY valid JSON:
-{
-  "fields": {
-    "<field_name>": {
-      "value": "<extracted string or null if absent>",
-      "raw_quote": "<exact substring in the email or null>",
-      "confidence": <number 0.0 to 1.0>,
-      "alternatives": ["<optional candidate 1>", "<optional candidate 2>"]
-    }
-  }
-}
-Important: If there are two phone numbers in the email (e.g. other driver's phone vs policyholder's phone at the bottom), include both in "alternatives" for "policyholder phone" with confidence 0.55 so the human agent can review it. If police report number is not provided, set value to null.`;
-
-      const exRes = await callTerraText(sys, `EMAIL:\n${content}\n\nFIELDS:\n${fieldSpecs}`, 900);
-      let parsedFields: Record<
-        string,
-        { value: string | null; raw_quote?: string | null; confidence?: number; alternatives?: string[] }
-      > = {};
-      if (exRes.ok) {
-        try {
-          const cleaned = exRes.text
-            .replace(/^```(?:json)?\s*/i, "")
-            .replace(/\s*```$/i, "")
-            .trim();
-          const obj = JSON.parse(cleaned);
-          parsedFields = obj.fields || obj;
-        } catch {
-          const m = exRes.text.match(/\{[\s\S]*\}/);
-          if (m) {
-            try {
-              const obj = JSON.parse(m[0]);
-              parsedFields = obj.fields || obj;
-            } catch {
-              parsedFields = {};
-            }
-          }
-        }
-      }
-
-      let okCount = 0;
-      let reviewCount = 0;
-      let missCount = 0;
-
-      for (let i = 0; i < CLAIM_DEMO.form.length; i++) {
-        const f = CLAIM_DEMO.form[i];
-        const ext = parsedFields[f.name] || { value: null, confidence: 0 };
-        const val = ext.value ? String(ext.value).trim() : "";
-        const conf = typeof ext.confidence === "number" ? ext.confidence : val ? 0.92 : 0;
-        const alts = Array.isArray(ext.alternatives) ? ext.alternatives.filter(Boolean) : [];
-        const st: "ok" | "review" | "miss" = !val
-          ? "miss"
-          : conf < 0.65 || alts.length > 1
-          ? "review"
-          : "ok";
-
-        if (st === "ok") okCount++;
-        else if (st === "review") reviewCount++;
-        else missCount++;
-
-        const spans: Array<{ start: number; end: number; text: string }> = [];
-        const needle = (ext.raw_quote || val).trim();
-        if (needle && content.includes(needle)) {
-          const start = content.indexOf(needle);
-          spans.push({ start, end: start + needle.length, text: needle });
-        }
-
-        send(ws, "agent_field_filled", {
-          index: i,
-          name: f.name,
-          label: f.label,
-          value: val,
-          raw: ext.raw_quote || val,
-          confidence: conf,
-          status: st,
-          alternatives: alts,
-          spans,
-        });
-
-        if (st === "review") {
-          send(ws, "agent_step", {
-            icon: "?",
-            text: `<b>${f.label}</b>: ${alts.length > 1 ? `${alts.length} candidates found` : "low confidence"}, flagged for review`,
-            status: "review",
-            elapsed_ms: elapsed(),
-          });
-        } else if (st === "miss") {
-          send(ws, "agent_step", {
-            icon: "×",
-            text: `<b>${f.label}</b>: missing from email`,
-            status: "miss",
-            elapsed_ms: elapsed(),
-          });
-        }
-      }
-
-      const fastTrackAns = d1Gates.answers["fast_track"];
-      send(ws, "agent_step", {
-        icon: fastTrackAns?.label === "Yes" ? "✓" : "→",
-        text:
-          fastTrackAns?.label === "Yes"
-            ? `<b>Microsoft-Decision-1.1 Gate</b>: Fast-track eligible (${fastTrackAns.detail})`
-            : `<b>Microsoft-Decision-1.1 Gate</b>: Requires manual adjuster review (${fastTrackAns?.detail || "–"})`,
-        status: fastTrackAns?.label === "Yes" ? "ok" : "review",
-        elapsed_ms: elapsed(),
-      });
-
-      send(ws, "agent_done", {
-        okCount,
-        reviewCount,
-        missCount,
-        totalFields: CLAIM_DEMO.form.length,
-        elapsed_ms: elapsed(),
+      const generation = session.claimGeneration = (session.claimGeneration || 0) + 1;
+      await runClaimWorkflow(payload, {
+        decisionName: DECISION_DEPLOYMENT, baselineName: TERRA_DEPLOYMENT,
+        evaluateDecision: (content) => callDecision1(content, CLAIM_QUESTIONS),
+        evaluateBaseline: (content) => callGptTerraDecision(content, CLAIM_QUESTIONS),
+        extract: (system, content) => callTerraText(system, content, 1600),
+        emit: (event, data) => send(ws, event, data),
+        isCurrent: () => session.claimGeneration === generation && ws.readyState === ws.OPEN,
       });
     }
   });

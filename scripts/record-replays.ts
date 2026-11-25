@@ -1,7 +1,8 @@
 import { readFile, writeFile, mkdir, rename, unlink } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import WebSocket from "ws";
-import { CLAIM_DEMO, RUNTIME_SCENARIOS, STUDIO_SAMPLES, TRIAGE_FEED, type StudioSample } from "../src/lib/demo-data";
+import { RUNTIME_SCENARIOS, STUDIO_SAMPLES, TRIAGE_FEED, type StudioSample } from "../src/lib/demo-data";
+import { CLAIM_CASES, CLAIM_FIELDS, CLAIM_QUESTIONS, claimRequest } from "../src/lib/claims";
 import { parseReplayBundle, redactReplayBundle, PUBLIC_REPLAY_ENDPOINT, type ReplayBundle, type ReplayRecording } from "../src/lib/replay";
 
 const output = resolve(process.env.REPLAY_OUTPUT || "public/replays/showcase.json");
@@ -63,10 +64,12 @@ function validateResult(recording: ReplayRecording) {
         !["runtime_decision", "runtime_terra_decision"].every((name) => results.some((event) => event.event === name && event.data.textLen === transcript.length)) ||
         !results.some((event) => event.event === "runtime_extract")) throw new Error("Incomplete conversation or final decisions.");
   } else {
-    const gates = results.find((event) => event.event === "agent_gates_done")?.data;
-    if (!gates?.decision1?.ok || !gates?.terra?.ok ||
-        results.filter((event) => event.event === "agent_field_filled").length !== CLAIM_DEMO.form.length ||
-        !results.some((event) => event.event === "agent_field_filled" && event.data.value)) throw new Error("Claims gates or form extraction failed.");
+    const gates = results.filter((event) => event.event === "claim_gate_result");
+    const extraction = results.find((event) => event.event === "claim_extraction_result")?.data;
+    if (gates.length !== 2 || gates.some((event) => !event.data.result?.ok ||
+        CLAIM_QUESTIONS.some((question) => !event.data.result.answers?.[question.id])) ||
+        extraction?.error || extraction?.fields?.length !== CLAIM_FIELDS.length ||
+        !results.find((event) => event.event === "agent_done")?.data.outcome) throw new Error("Claims gates or form extraction failed.");
   }
 }
 
@@ -91,7 +94,10 @@ async function main() {
   for (const rate of [5, 10, 20]) requests.push({
     id: `triage-${rate}`, label: `Queue triage / ${rate} messages per second`, action: "start_triage", payload: { rate, raceTerra: true },
   });
-  requests.push({ id: "claims", label: "Claims gates and form extraction", action: "run_agent_form", payload: { content: CLAIM_DEMO.text } });
+  for (const example of CLAIM_CASES) requests.push({
+    id: `claims-${example.id}`, label: `Claims / ${example.label}`, action: "run_agent_form",
+    payload: claimRequest(example.content, example.id),
+  });
   const healthResponse = await fetch(new URL("/api/health", wsUrl.replace(/^ws/, "http")));
   const health = await healthResponse.json();
   if (!health.ok) throw new Error("Azure health probe failed. Authenticate the backend before recording.");

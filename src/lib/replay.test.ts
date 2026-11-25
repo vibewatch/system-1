@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { STUDIO_SAMPLES, RUNTIME_SCENARIOS, TRIAGE_FEED } from "./demo-data";
+import { CLAIM_CASES, CLAIM_FIELDS, claimRequest } from "./claims";
 import { ReplayDispatcher, parseReplayBundle, recordingMatches, redactReplayBundle, PUBLIC_REPLAY_ENDPOINT, type ReplayBundle } from "./replay";
 
 const fixture = (): ReplayBundle => ({
   version: 1, recordedAt: "2026-11-03T00:00:00Z", endpoint: "https://example.invalid",
-  models: { decision1: "Decision-1", terra: "gpt-6.1-terra" }, scenarios: [STUDIO_SAMPLES[0]],
+  models: { decision1: "Decision-1.1", terra: "gpt-6.1-terra" }, scenarios: [STUDIO_SAMPLES[0]],
   recordings: [{
     id: "comparison", label: "Recorded comparison", action: "run_compare", durationMs: 120,
     payload: { state: "input", questions: [{ id: "safe", type: "noul", instructions: "Is it safe?" }] },
@@ -86,13 +87,16 @@ test("rejects invalid timelines and unsupported recording versions", () => {
   assert.throws(() => parseReplayBundle(incomplete), /missing final event/);
 });
 
-test("imported log markup cannot run HTML but retains bold labels", async () => {
+test("imported source evidence stays literal and uses the active Claims run ID", async () => {
   const bundle = fixture();
-  bundle.recordings[0].events = [{ event: "agent_step", offsetMs: 0, data: { text: '<b>Result</b><img src=x onerror=alert(1)>' } }];
+  bundle.recordings[0].action = "run_agent_form";
+  bundle.recordings[0].payload = claimRequest(CLAIM_CASES[0].content, CLAIM_CASES[0].id);
+  bundle.recordings[0].events = [{ event: "claim_extraction_result", offsetMs: 0, data: { runId: "recorded-id", quote: '<img src=x onerror=alert(1)>' } }];
   const events: any[] = [];
   const dispatcher = new ReplayDispatcher(bundle, (event) => events.push(event));
-  dispatcher.dispatch("run_compare", bundle.recordings[0].payload);
-  assert.equal(events[0].data.text, "<b>Result</b>&lt;img src=x onerror=alert(1)&gt;");
+  dispatcher.dispatch("run_agent_form", { ...bundle.recordings[0].payload, runId: "active-id" });
+  assert.equal(events[0].data.quote, '<img src=x onerror=alert(1)>');
+  assert.equal(events[0].data.runId, "active-id");
   dispatcher.stop();
 });
 
@@ -171,5 +175,11 @@ test("included recording covers every built-in case, stream, rate and claims for
     assert(recording, `Missing triage ${rate}`);
     assert.equal(recording.events.filter((event) => event.event === "triage_item_done" && event.data.ok).length, TRIAGE_FEED.messages.length * 2);
   }
-  assert(bundle.recordings.some((item) => item.action === "run_agent_form" && item.events.some((event) => event.event === "agent_done")));
+  for (const example of CLAIM_CASES) {
+    const recording = bundle.recordings.find((item) => recordingMatches(item, "run_agent_form", claimRequest(example.content, example.id)));
+    assert(recording, `Missing Claims case ${example.id}`);
+    assert.equal(recording.events.filter((event) => event.event === "claim_gate_result" && event.data.result?.ok).length, 2);
+    assert.equal(recording.events.find((event) => event.event === "claim_extraction_result")?.data.fields.length, CLAIM_FIELDS.length);
+    assert(recording.events.some((event) => event.event === "agent_done" && event.data.outcome));
+  }
 });

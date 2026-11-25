@@ -36,7 +36,7 @@ const EVENTS = new Set([
   "compare_started", "compare_model_done", "compare_finished",
   "runtime_started", "runtime_token", "runtime_decision", "runtime_terra_decision", "runtime_extract", "runtime_done",
   "triage_started", "triage_arrival", "triage_item_done", "triage_done",
-  "agent_step", "agent_gates_done", "agent_field_filled", "agent_done",
+  "claim_started", "claim_gate_result", "claim_extraction_result", "agent_done",
 ]);
 export const PUBLIC_REPLAY_ENDPOINT = "https://<your-foundry-resource>.cognitiveservices.azure.com";
 
@@ -76,7 +76,11 @@ export function recordingMatches(recording: ReplayRecording, action: string, pay
   if (action === "start_triage") return recording.payload.rate === (Number(payload.rate) || 10)
     && recording.payload.raceTerra === (payload.raceTerra !== false)
     && (recording.payload.comparisonMode === "equal" ? "equal" : "demo") === (payload.comparisonMode === "equal" ? "equal" : "demo");
-  return recording.payload.content === payload.content;
+  return recording.payload.content === payload.content
+    && recording.payload.caseId === payload.caseId
+    && recording.payload.schemaVersion === 2 && payload.schemaVersion === 2
+    && canonical(recording.payload.policy) === canonical(payload.policy)
+    && canonical(recording.payload.questions) === canonical(payload.questions);
 }
 
 export function parseReplayBundle(value: unknown): ReplayBundle {
@@ -119,6 +123,7 @@ export class ReplayDispatcher {
   private anchor = 0;
   private speed = 1;
   private paused = false;
+  private claimRunId: unknown;
 
   constructor(
     readonly bundle: ReplayBundle,
@@ -143,11 +148,7 @@ export class ReplayDispatcher {
   }
   private deliver(event: ReplayEvent) {
     const data = structuredClone(event.data);
-    // Imported files may contain log HTML; only the existing bold markup is allowed.
-    if (event.event === "agent_step" && typeof data.text === "string") {
-      data.text = data.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-        .replace(/&lt;(\/?)b&gt;/g, "<$1b>");
-    }
+    if (this.recording?.action === "run_agent_form") data.runId = this.claimRunId;
     this.emit({ event: event.event, data, ts: Date.parse(this.bundle.recordedAt) + event.offsetMs });
   }
   private tick = () => {
@@ -182,6 +183,7 @@ export class ReplayDispatcher {
     }
     this.stop();
     this.recording = recording;
+    this.claimRunId = payload.runId;
     this.index = 0;
     this.elapsed = 0;
     this.paused = false;
@@ -213,7 +215,7 @@ export class ReplayDispatcher {
     this.progress(null);
     if (wasPlaying) {
       const event = action === "run_compare" ? "compare_finished" : action === "start_runtime" ? "runtime_stopped" : action === "start_triage" ? "triage_stopped" : "agent_done";
-      this.emit({ event, data: { cancelled: true }, ts: Date.now() });
+      this.emit({ event, data: { cancelled: true, ...(action === "run_agent_form" ? { runId: this.claimRunId } : {}) }, ts: Date.now() });
     }
   }
   async comparePair(state: unknown, questions: DecisionQuestion[]): Promise<{ decision1: DecisionRunResult; terra: DecisionRunResult }> {
