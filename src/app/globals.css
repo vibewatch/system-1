@@ -1888,6 +1888,208 @@ mark.src.focus {
   border-top: 1px solid var(--border-soft);
 }
 
+.comparison-proof {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.comparison-outcome {
+  padding: 18px 20px;
+  background: var(--bg-card-soft);
+  border-bottom: 1px solid var(--border);
+}
+
+.comparison-outcome h2 {
+  margin: 6px 0 8px;
+  font-size: var(--font-2xl);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.comparison-outcome p,
+.comparison-metric p,
+.comparison-details p {
+  margin: 6px 0;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+}
+
+.comparison-scorecards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.comparison-metric {
+  padding: 16px 20px;
+  min-width: 0;
+}
+
+.comparison-metric + .comparison-metric {
+  border-left: 1px solid var(--border);
+}
+
+.comparison-metric h3 {
+  font-size: var(--font-md);
+  margin: 0 0 14px;
+}
+
+.comparison-metric h3 small {
+  display: block;
+  font-size: var(--font-xs);
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.comparison-row {
+  --comparison-color: var(--primary);
+  margin-bottom: 12px;
+}
+
+.comparison-row.terra {
+  --comparison-color: var(--terra);
+}
+
+.comparison-row > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: var(--font-sm);
+}
+
+.comparison-row span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.comparison-row b {
+  color: var(--comparison-color);
+  font: 700 var(--font-md) var(--mono);
+  white-space: nowrap;
+}
+
+.comparison-track {
+  height: 10px;
+  background: var(--track);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.comparison-track i {
+  display: block;
+  height: 100%;
+  background: var(--comparison-color);
+  transition: width 0.2s ease;
+}
+
+.comparison-method {
+  padding: 10px 16px;
+  margin: 0;
+  font-size: var(--font-sm);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.comparison-details {
+  border-top: 1px solid var(--border-soft);
+}
+
+.comparison-details summary {
+  cursor: pointer;
+  padding: 10px 16px;
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+
+.comparison-details > p,
+.comparison-impact {
+  padding: 0 16px 12px;
+}
+
+.comparison-impact label {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: var(--font-sm);
+}
+
+.comparison-impact input {
+  max-width: 170px;
+}
+
+.comparison-error {
+  padding: 10px 16px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+
+.comparison-verdict {
+  margin: 4px 0;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
+
+.comparison-verdict.pass {
+  color: var(--primary);
+}
+
+.comparison-verdict.fail {
+  color: var(--danger);
+}
+
+.comparison-issue-row td:first-child {
+  border-left: 3px solid var(--amber);
+}
+
+.comparison-scenario-picker {
+  display: none;
+}
+
+.comparison-input {
+  margin: 0 16px 16px;
+  padding: 12px 14px;
+  max-height: 250px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--bg-input);
+  font: var(--font-sm)/1.6 var(--mono);
+}
+
+@media (max-width: 1080px) {
+  .wb-shell > .wb-sidebar {
+    display: none;
+  }
+  .comparison-scenario-picker {
+    display: block;
+    padding: 12px 16px 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .comparison-scorecards {
+    grid-template-columns: 1fr;
+  }
+  .comparison-metric + .comparison-metric {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .comparison-track i {
+    transition: none;
+  }
+}
+
 /* Unified Verification Table */
 .wb-table-wrap {
   overflow-x: auto;

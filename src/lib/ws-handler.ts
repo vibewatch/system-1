@@ -18,6 +18,7 @@ import {
   extractSpansWithTerra,
   type ExtractedSpan,
 } from "./foundry";
+import { getTriageWorkers } from "./triage-config";
 
 function send(ws: WebSocket, event: string, data: unknown) {
   if (ws.readyState === ws.OPEN) {
@@ -140,6 +141,7 @@ interface ClientSession {
   runtimeAbort?: AbortController;
   triageTimer?: ReturnType<typeof setInterval>;
   triageAborted?: boolean;
+  triageGeneration?: number;
 }
 
 export function attachWebSocketClient(ws: WebSocket) {
@@ -412,6 +414,7 @@ export function attachWebSocketClient(ws: WebSocket) {
     if (action === "stop_triage") {
       if (session.triageTimer) clearInterval(session.triageTimer);
       session.triageAborted = true;
+      session.triageGeneration = (session.triageGeneration || 0) + 1;
       send(ws, "triage_stopped", {});
       return;
     }
@@ -419,6 +422,8 @@ export function attachWebSocketClient(ws: WebSocket) {
     if (action === "start_triage") {
       if (session.triageTimer) clearInterval(session.triageTimer);
       session.triageAborted = false;
+      const generation = session.triageGeneration = (session.triageGeneration || 0) + 1;
+      const isCurrent = () => !session.triageAborted && session.triageGeneration === generation;
 
       const rate = Math.max(1, Math.min(30, Number(payload.rate) || 10));
       const raceTerra = payload.raceTerra !== false;
@@ -434,25 +439,28 @@ export function attachWebSocketClient(ws: WebSocket) {
       let d1Done = 0;
       let terraDone = 0;
       let arrived = 0;
+      let finished = false;
 
-      const D1_CONCURRENCY = 8;
-      const TERRA_CONCURRENCY = 4;
+      const workers = getTriageWorkers(payload.comparisonMode);
+      const D1_CONCURRENCY = workers.decision1;
+      const TERRA_CONCURRENCY = workers.terra;
 
       const checkAllDone = () => {
-        if (session.triageAborted) return;
+        if (!isCurrent() || finished) return;
         if (arrived >= total && d1Done >= total && (!raceTerra || terraDone >= total)) {
+          finished = true;
           send(ws, "triage_done", { total });
         }
       };
 
       const pumpD1 = () => {
-        while (!session.triageAborted && d1Inflight < D1_CONCURRENCY && d1Queue.length > 0) {
+        while (isCurrent() && d1Inflight < D1_CONCURRENCY && d1Queue.length > 0) {
           const idx = d1Queue.shift()!;
           d1Inflight++;
           const msgText = messages[idx];
           callDecision1(msgText, questions)
             .then((res) => {
-              if (session.triageAborted) return;
+              if (!isCurrent()) return;
               const wait_ms = Math.round(performance.now() - (arrivalTimes.get(idx) || performance.now()));
               const spans = extractTriageSpans(msgText);
               d1Done++;
@@ -467,6 +475,13 @@ export function attachWebSocketClient(ws: WebSocket) {
                 usage: res.usage,
               });
             })
+            .catch((error) => {
+              if (!isCurrent()) return;
+              d1Done++;
+              send(ws, "triage_item_done", { lane: "decision1", index: idx, ok: false,
+                wait_ms: Math.round(performance.now() - arrivalTimes.get(idx)!),
+                latency_ms: 0, answers: {}, error: String(error) });
+            })
             .finally(() => {
               d1Inflight--;
               pumpD1();
@@ -477,13 +492,13 @@ export function attachWebSocketClient(ws: WebSocket) {
 
       const pumpTerra = () => {
         if (!raceTerra) return;
-        while (!session.triageAborted && terraInflight < TERRA_CONCURRENCY && terraQueue.length > 0) {
+        while (isCurrent() && terraInflight < TERRA_CONCURRENCY && terraQueue.length > 0) {
           const idx = terraQueue.shift()!;
           terraInflight++;
           const msgText = messages[idx];
           callGptTerraDecision(msgText, questions)
             .then((res) => {
-              if (session.triageAborted) return;
+              if (!isCurrent()) return;
               const wait_ms = Math.round(performance.now() - (arrivalTimes.get(idx) || performance.now()));
               terraDone++;
               send(ws, "triage_item_done", {
@@ -496,6 +511,13 @@ export function attachWebSocketClient(ws: WebSocket) {
                 usage: res.usage,
               });
             })
+            .catch((error) => {
+              if (!isCurrent()) return;
+              terraDone++;
+              send(ws, "triage_item_done", { lane: "terra", index: idx, ok: false,
+                wait_ms: Math.round(performance.now() - arrivalTimes.get(idx)!),
+                latency_ms: 0, answers: {}, error: String(error) });
+            })
             .finally(() => {
               terraInflight--;
               pumpTerra();
@@ -505,8 +527,8 @@ export function attachWebSocketClient(ws: WebSocket) {
       };
 
       const arriveNext = () => {
-        if (session.triageAborted || arrived >= total) {
-          if (session.triageTimer) clearInterval(session.triageTimer);
+        if (!isCurrent() || arrived >= total) {
+          if (isCurrent() && session.triageTimer) clearInterval(session.triageTimer);
           return;
         }
         const idx = arrived++;
@@ -523,7 +545,9 @@ export function attachWebSocketClient(ws: WebSocket) {
         pumpTerra();
       };
 
-      send(ws, "triage_started", { total, rate, raceTerra });
+      send(ws, "triage_started", { total, rate, raceTerra,
+        comparisonMode: payload.comparisonMode === "equal" ? "equal" : "demo",
+        decisionConcurrency: D1_CONCURRENCY, terraConcurrency: TERRA_CONCURRENCY });
       arriveNext();
       session.triageTimer = setInterval(arriveNext, Math.round(1000 / rate));
       return;

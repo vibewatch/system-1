@@ -7,7 +7,6 @@ import {
   DecisionQuestion,
   QuestionType,
   computeCorrectnessSummary,
-  computeUseCaseEconomics,
   getScenarioNarrative,
 } from "@/lib/demo-data";
 import type { DecisionRunResult } from "@/lib/foundry";
@@ -15,6 +14,9 @@ import { CustomSelect } from "./CustomSelect";
 import { IconButton } from "./IconButton";
 import { Copy, Grid2X2, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { normalizeFoundryEndpoint } from "@/lib/deployment";
+import { prioritizeQuestions } from "@/lib/comparison-evidence";
+import type { ReplayBundle } from "@/lib/replay";
+import { ComparisonProof } from "./ComparisonProof";
 
 function buildClientSystemOnePayload(
   state: unknown,
@@ -48,6 +50,7 @@ interface StudioCompareViewProps {
   comparisonModelName?: string;
   decisionModelName?: string;
   replayMode?: boolean;
+  replayBundle?: ReplayBundle | null;
   endpointUrl?: string;
   allUseCases?: StudioSample[];
   externalSample?: StudioSample | null;
@@ -62,6 +65,7 @@ export default function StudioCompareView({
   comparisonModelName = "gpt-6.1-terra",
   decisionModelName = "Decision-1.1",
   replayMode = false,
+  replayBundle,
   endpointUrl = "https://<your-foundry-resource>.cognitiveservices.azure.com",
   allUseCases,
   externalSample,
@@ -86,9 +90,11 @@ export default function StudioCompareView({
     activeSample.testCases && activeSample.testCases[activeCaseIndex]
       ? activeSample.testCases[activeCaseIndex]
       : undefined;
-  const activeExpected = activeTestCase?.expected || activeSample.expected;
-  const activeVerdict =
-    activeTestCase?.expectedGateVerdict || activeSample.expectedGateVerdict;
+  const hasReferenceInput = stateText === (activeTestCase?.content || activeSample.content)
+    && JSON.stringify(questions) === JSON.stringify(activeSample.questions);
+  const activeExpected = hasReferenceInput ? activeTestCase?.expected || activeSample.expected : undefined;
+  const activeVerdict = hasReferenceInput
+    ? activeTestCase?.expectedGateVerdict || activeSample.expectedGateVerdict : undefined;
   const narrative = useMemo(
     () => getScenarioNarrative(activeSample),
     [activeSample]
@@ -98,6 +104,8 @@ export default function StudioCompareView({
     "table" | "visual" | "probs" | "api"
   >("table");
   const [racing, setRacing] = useState(false);
+  const [modelErrors, setModelErrors] = useState<{ decision1?: string; terra?: string }>({});
+  const [issuesOnly, setIssuesOnly] = useState(false);
   const [d1Result, setD1Result] = useState<DecisionRunResult | null>(null);
   const [terraResult, setTerraResult] = useState<DecisionRunResult | null>(
     null
@@ -114,11 +122,15 @@ export default function StudioCompareView({
         setRacing(true);
         setD1Result(null);
         setTerraResult(null);
+        setModelErrors({});
       } else if (event === "compare_model_done") {
+        if (data.error || data.result?.ok === false) {
+          setModelErrors((previous) => ({ ...previous, [data.tier]: data.error || data.result.error || `HTTP ${data.result.status}` }));
+        }
         if (data.tier === "decision1") {
-          setD1Result(data.result);
+          setD1Result(data.result || null);
         } else if (data.tier === "terra") {
-          setTerraResult(data.result);
+          setTerraResult(data.result || null);
         }
       } else if (event === "compare_finished") {
         setRacing(false);
@@ -126,9 +138,16 @@ export default function StudioCompareView({
         setRacing(false);
         setD1Result(null);
         setTerraResult(null);
+        setModelErrors({ decision1: data.message || "Comparison failed." });
       }
     });
   }, [subscribeWs]);
+
+  useEffect(() => {
+    setD1Result(null);
+    setTerraResult(null);
+    setModelErrors({});
+  }, [stateText, questions]);
 
   const [didInitialRun, setDidInitialRun] = useState(false);
   useEffect(() => {
@@ -270,25 +289,6 @@ export default function StudioCompareView({
 
   const d1Ms = d1Result?.latency_ms || 0;
   const terraMs = terraResult?.latency_ms || 0;
-  const maxMs = Math.max(d1Ms, terraMs, 1);
-  const speedup =
-    d1Ms > 0 && terraMs > 0 ? (terraMs / d1Ms).toFixed(1) : null;
-
-  let agreedCount = 0;
-  let comparedCount = 0;
-  if (d1Result?.answers && terraResult?.answers) {
-    for (const q of questions) {
-      const a = d1Result.answers[q.id];
-      const b = terraResult.answers[q.id];
-      if (a && b) {
-        comparedCount++;
-        if (a.label.toLowerCase() === b.label.toLowerCase()) {
-          agreedCount++;
-        }
-      }
-    }
-  }
-
   const correctnessSummary = useMemo(
     () =>
       computeCorrectnessSummary(
@@ -300,27 +300,12 @@ export default function StudioCompareView({
     [questions, activeExpected, d1Result?.answers, terraResult?.answers]
   );
 
-  const economicsSummary = useMemo(
-    () =>
-      computeUseCaseEconomics(
-        {
-          id: activeSample.id,
-          content: stateText,
-          questions,
-          estimatedDailyVolume: activeSample.estimatedDailyVolume,
-        },
-        d1Result?.usage,
-        terraResult?.usage
-      ),
-    [
-      activeSample.id,
-      activeSample.estimatedDailyVolume,
-      stateText,
-      questions,
-      d1Result?.usage,
-      terraResult?.usage,
-    ]
-  );
+  const orderedQuestions = prioritizeQuestions(questions, activeExpected, d1Result, terraResult);
+  const issueIds = new Set(correctnessSummary.rows.filter((row) =>
+    (activeExpected?.[row.questionId] && ((d1Result?.ok && !row.d1Match) || (terraResult?.ok && !row.terraMatch)))
+      || (d1Result?.ok && terraResult?.ok && !row.modelsAgree),
+  ).map((row) => row.questionId));
+  const visibleQuestions = issuesOnly ? orderedQuestions.filter((question) => issueIds.has(question.id)) : orderedQuestions;
 
   const systemOnePayload = buildClientSystemOnePayload(stateText, questions, decisionModelName);
 
@@ -389,6 +374,7 @@ export default function StudioCompareView({
                       type="button"
                       className={`wb-nav-item ${isActive ? "active" : ""}`}
                       onClick={() => selectSample(s.id)}
+                      disabled={racing}
                     >
                       <span className="wb-nav-item-title">{shortTitle}</span>
                       <span className="wb-nav-item-meta">
@@ -407,6 +393,10 @@ export default function StudioCompareView({
         <div className="wb-main">
           {/* TIER 1: Scenario Brief (What Problem It Solves & What It Proves) + Test Case Input */}
           <section className="wb-brief-card">
+            <div className="comparison-scenario-picker">
+              <CustomSelect value={sampleId} disabled={racing} onChange={selectSample}
+                options={samples.map((sample) => ({ value: sample.id, label: sample.label, category: sample.industry || sample.category }))} />
+            </div>
             <div className="wb-brief-top">
               <div>
                 <div
@@ -463,7 +453,7 @@ export default function StudioCompareView({
               </div>
 
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <IconButton label="Customize input and questions" icon={<SlidersHorizontal size={17} />} tag={`${questions.length} questions`} onClick={() => setSchemaModalOpen(true)} />
+                <IconButton label="Customize input and questions" icon={<SlidersHorizontal size={17} />} tag={`${questions.length} questions`} disabled={racing} onClick={() => setSchemaModalOpen(true)} />
                 <button
                   type="button"
                   className="primary"
@@ -474,30 +464,6 @@ export default function StudioCompareView({
                     ? replayMode ? "Replaying…" : "Evaluating Live…"
                     : replayMode ? "Replay comparison" : "Run Live Evaluation"}
                 </button>
-              </div>
-            </div>
-
-            {/* 2-Column Editorial Explanation: Problem Solved vs What It Proves */}
-            <div className="wb-purpose-grid">
-              <div className="wb-purpose-cell">
-                <div
-                  className="wb-purpose-kicker"
-                  style={{ color: "var(--terra)" }}
-                >
-                  <span>01 · Business Problem Solved</span>
-                </div>
-                <p className="wb-purpose-body">{narrative.problemSolved}</p>
-              </div>
-              <div className="wb-purpose-cell">
-                <div
-                  className="wb-purpose-kicker"
-                  style={{ color: "var(--primary)" }}
-                >
-                  <span>
-                    02 · What This Proves About Microsoft-Decision-1.1
-                  </span>
-                </div>
-                <p className="wb-purpose-body">{narrative.whatItProves}</p>
               </div>
             </div>
 
@@ -536,6 +502,7 @@ export default function StudioCompareView({
                           type="button"
                           className={`wb-case-tab ${active ? "active" : ""}`}
                           onClick={() => selectTestCase(idx)}
+                          disabled={racing}
                         >
                           <span
                             className="dot"
@@ -573,137 +540,14 @@ export default function StudioCompareView({
                 </span>
               </div>
 
-              <div
-                style={{
-                  background: "var(--bg-input)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius-sm)",
-                  padding: "12px 14px",
-                  font: "var(--font-sm)/1.6 var(--mono)",
-                  color: "var(--text)",
-                  whiteSpace: "pre-wrap",
-                  maxHeight: 155,
-                  overflowY: "auto",
-                }}
-              >
-                {stateText}
-              </div>
             </div>
           </section>
 
-          {/* TIER 2: 3-Pillar Executive Proof Scoreboard (Speed, Correctness, Economics) */}
-          <section
-            className="wb-proof-strip"
-            aria-label="Executive Proof Metrics"
-          >
-            {/* Pillar 1: Latency */}
-            <div className="wb-proof-cell">
-              <div className="wb-proof-label">
-                <span>01 · Latency Speedup</span>
-                <span>Single Forward Pass</span>
-              </div>
-              <div className="wb-proof-main">
-                <span className="wb-proof-hero accent">
-                  {speedup ? `${speedup}×` : racing ? "…" : "—"}
-                </span>
-                <div style={{ textAlign: "right", font: "500 var(--font-sm) var(--mono)" }}>
-                  <div style={{ color: "var(--primary)", fontWeight: 700 }}>
-                    Decision-1.1: {d1Ms ? `${d1Ms} ms` : racing ? "running…" : "—"}
-                  </div>
-                  <div style={{ color: "var(--terra)" }}>
-                    {comparisonModelName}:{" "}
-                    {terraMs ? `${terraMs} ms` : racing ? "running…" : "—"}
-                  </div>
-                </div>
-              </div>
-              <div className="wb-proof-sub">
-                <span>Zero autoregressive generation</span>
-                <span>
-                  {d1Ms && terraMs
-                    ? `Saved ${terraMs - d1Ms} ms / call`
-                    : "Ready"}
-                </span>
-              </div>
-            </div>
-
-            {/* Pillar 2: Ground-Truth Correctness */}
-            <div className="wb-proof-cell">
-              <div className="wb-proof-label">
-                <span>02 · Ground-Truth Accuracy</span>
-                <span>Verified Policy Answers</span>
-              </div>
-              <div className="wb-proof-main">
-                <span className="wb-proof-hero accent">
-                  {d1Result && correctnessSummary.totalQuestions > 0
-                    ? `${correctnessSummary.d1AccuracyPct}%`
-                    : racing
-                    ? "…"
-                    : "—"}
-                </span>
-                <div style={{ textAlign: "right", font: "500 var(--font-sm) var(--mono)" }}>
-                  <div style={{ color: "var(--primary)", fontWeight: 700 }}>
-                    Decision-1.1:{" "}
-                    {d1Result && correctnessSummary.totalQuestions > 0
-                      ? `${correctnessSummary.d1Correct}/${correctnessSummary.totalQuestions} pass`
-                      : "—"}
-                  </div>
-                  <div style={{ color: "var(--terra)" }}>
-                    {comparisonModelName}:{" "}
-                    {terraResult && correctnessSummary.totalQuestions > 0
-                      ? `${correctnessSummary.terraCorrect}/${correctnessSummary.totalQuestions} (${correctnessSummary.terraAccuracyPct}%)`
-                      : "—"}
-                  </div>
-                </div>
-              </div>
-              <div className="wb-proof-sub">
-                <span>
-                  Avg Confidence: {correctnessSummary.d1AvgConfidencePct}%
-                </span>
-                <span>
-                  Model Agreement:{" "}
-                  {comparedCount > 0
-                    ? `${agreedCount}/${comparedCount} (${Math.round(
-                        (agreedCount / comparedCount) * 100
-                      )}%)`
-                    : "—"}
-                </span>
-              </div>
-            </div>
-
-            {/* Pillar 3: Production Economics */}
-            <div className="wb-proof-cell">
-              <div className="wb-proof-label">
-                <span>03 · Production Economics</span>
-                <span>$0.042/1M In · $0 Out</span>
-              </div>
-              <div className="wb-proof-main">
-                <span className="wb-proof-hero accent">
-                  {economicsSummary.savingsPct}%{" "}
-                  <small style={{ fontSize: "var(--font-md)", fontWeight: 600 }}>saved</small>
-                </span>
-                <div style={{ textAlign: "right", font: "500 var(--font-sm) var(--mono)" }}>
-                  <div style={{ color: "var(--primary)", fontWeight: 700 }}>
-                    Decision-1.1: ${economicsSummary.d1CostPer1kUsd.toFixed(4)} /
-                    1k
-                  </div>
-                  <div style={{ color: "var(--terra)" }}>
-                    {comparisonModelName}: $
-                    {economicsSummary.terraCostPer1kUsd.toFixed(3)} / 1k
-                  </div>
-                </div>
-              </div>
-              <div className="wb-proof-sub">
-                <span>{economicsSummary.costMultiplier}× lower cost</span>
-                <span>
-                  Saves $
-                  {economicsSummary.monthlySavingsUsd.toLocaleString("en-US", {
-                    maximumFractionDigits: 0,
-                  })}
-                  /mo @ {(economicsSummary.dailyVolume / 1000).toFixed(0)}k/day
-                </span>
-              </div>
-            </div>
-          </section>
+          <ComparisonProof key={activeSample.id} sample={activeSample} questions={questions}
+            state={stateText} expected={activeExpected} decision={d1Result} baseline={terraResult}
+            decisionName={decisionModelName} baselineName={comparisonModelName}
+            decisionError={modelErrors.decision1} baselineError={modelErrors.terra}
+            running={racing} replayMode={replayMode} replayBundle={replayBundle} />
 
           {/* TIER 3: Unified Criterion Verification Table & Secondary Views */}
           <section className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -721,7 +565,7 @@ export default function StudioCompareView({
             >
               <div>
                 <span className="eyebrow">
-                  03 · CRITERION-BY-CRITERION VERIFICATION
+                  Decision differences and reference verification
                 </span>
                 <div
                   style={{
@@ -730,12 +574,15 @@ export default function StudioCompareView({
                     marginTop: 2,
                   }}
                 >
-                  Calibrated System-1 probabilities vs. generative LLM outputs
-                  verified against ground truth
+                  Errors and disagreements appear first. Both models are checked against the same supplied reference answers.
                 </div>
               </div>
 
               <div className="nav-tabs">
+                <button type="button" className={`nav-tab ${issuesOnly ? "active" : ""}`}
+                  aria-pressed={issuesOnly} onClick={() => { setIssuesOnly((value) => !value); setOutTab("table"); }}>
+                  Errors &amp; differences ({issueIds.size})
+                </button>
                 <button
                   type="button"
                   className={`nav-tab ${outTab === "table" ? "active" : ""}`}
@@ -776,13 +623,13 @@ export default function StudioCompareView({
                       <th>Criterion / Question</th>
                       <th>Type</th>
                       <th>Expected Ground Truth</th>
-                      <th>Microsoft-Decision-1.1 (Calibrated)</th>
-                      <th>{comparisonModelName} (Baseline)</th>
-                      <th>Verification</th>
+                      <th>{decisionModelName}</th>
+                      <th>{comparisonModelName}</th>
+                      <th>Both-model verification</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {questions.map((q) => {
+                    {visibleQuestions.map((q) => {
                       const d1Ans = d1Result?.answers?.[q.id];
                       const terraAns = terraResult?.answers?.[q.id];
                       const rowCorr = correctnessSummary.rows.find(
@@ -791,7 +638,7 @@ export default function StudioCompareView({
                       const pct = d1Ans ? Math.round(d1Ans.value * 100) : 0;
 
                       return (
-                        <tr key={q.id}>
+                        <tr key={q.id} className={issueIds.has(q.id) ? "comparison-issue-row" : ""}>
                           <td style={{ maxWidth: 290 }}>
                             <div style={{ fontWeight: 600, color: "var(--text)" }}>
                               {q.label}
@@ -908,36 +755,22 @@ export default function StudioCompareView({
                             )}
                           </td>
                           <td style={{ font: "600 var(--font-xs) var(--mono)" }}>
-                            {rowCorr?.d1Match === true ? (
-                              <span
-                                style={{
-                                  color: "var(--primary)",
-                                  background: "var(--primary-soft)",
-                                  padding: "3px 8px",
-                                  borderRadius: 4,
-                                  border: "1px solid var(--border-strong)",
-                                }}
-                              >
-                                ✓ PASS
-                              </span>
-                            ) : rowCorr?.d1Match === false ? (
-                              <span
-                                style={{
-                                  color: "var(--danger)",
-                                  background: "var(--danger-soft)",
-                                  padding: "3px 8px",
-                                  borderRadius: 4,
-                                }}
-                              >
-                                ✗ DIFF
-                              </span>
-                            ) : (
-                              <span style={{ color: "var(--text-dim)" }}>—</span>
-                            )}
+                            {[
+                              { name: decisionModelName, result: d1Result, match: rowCorr?.d1Match },
+                              { name: comparisonModelName, result: terraResult, match: rowCorr?.terraMatch },
+                            ].map((model) => <div key={model.name} className={`comparison-verdict ${
+                              !model.result?.ok || !activeExpected?.[q.id] ? "" : model.match ? "pass" : "fail"
+                            }`}>
+                              {model.name}: {!model.result?.ok ? "Not evaluated" : !activeExpected?.[q.id]
+                                ? "No reference" : model.match ? "PASS" : "MISMATCH"}
+                            </div>)}
                           </td>
                         </tr>
                       );
                     })}
+                    {issuesOnly && visibleQuestions.length === 0 && <tr><td colSpan={6}>
+                      {d1Result?.ok && terraResult?.ok ? "No answer errors or disagreements in this case." : "Waiting for successful results from both models."}
+                    </td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -946,7 +779,7 @@ export default function StudioCompareView({
             {/* SIDE-BY-SIDE VISUAL METERS */}
             {outTab === "visual" && (
               <div style={{ padding: 20 }} className="panels two">
-                <div className="panel winner">
+                <div className="panel">
                   <div className="panel-head">
                     <div>
                       <span className="badge">MICROSOFT-DECISION-1.1</span>
@@ -1271,6 +1104,21 @@ export default function StudioCompareView({
               </div>
             )}
           </section>
+          <details className="comparison-details wb-brief-card">
+            <summary>Shared input and business context</summary>
+            <div className="wb-purpose-grid">
+              <div className="wb-purpose-cell">
+                <div className="wb-purpose-kicker">Business problem</div>
+                <p className="wb-purpose-body">{narrative.problemSolved}</p>
+              </div>
+              <div className="wb-purpose-cell">
+                <div className="wb-purpose-kicker">Capability under evaluation</div>
+                <p className="wb-purpose-body">Evaluate structured decisions against the reference answers.
+                  Inspect disagreements before drawing conclusions about this scenario.</p>
+              </div>
+            </div>
+            <pre className="comparison-input">{stateText}</pre>
+          </details>
         </div>
       </div>
 

@@ -523,8 +523,8 @@ export default function HomePage() {
               </div>
               <p className="guide-step-desc">
                 Evaluates structured questions (<b>Noul</b> yes/no,{" "}
-                <b>Choice</b> routing, <b>Score</b> rubrics) in ~260ms with
-                calibrated probabilities and <b>$0 output token cost</b>.
+                <b>Choice</b> routing, <b>Score</b> rubrics). Compare observed latency,
+                reference correctness and estimated cost; inspect errors and pricing assumptions.
               </p>
             </div>
 
@@ -642,6 +642,7 @@ export default function HomePage() {
           comparisonModelName={comparisonModelLabel}
           decisionModelName={decisionModelLabel}
           replayMode={replayEnabled}
+          replayBundle={replayBundle}
           endpointUrl={endpointLabel || "https://<your-foundry-resource>.cognitiveservices.azure.com"}
           allUseCases={allUseCases}
           externalSample={studioExternalSample}
@@ -816,7 +817,7 @@ export default function HomePage() {
           <b>
             {decisionModelLabel}
           </b>{" "}
-          vs <b>{comparisonModelLabel}</b> · Pricing: <b>$0.042/1M input · $0 output</b>
+          vs <b>{comparisonModelLabel}</b> · Assumed rates: <b>$0.042/1M input · $0 output</b> · verify deployment pricing
         </span>
       </footer>
     </div>

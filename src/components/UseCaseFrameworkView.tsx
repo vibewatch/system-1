@@ -307,10 +307,10 @@ export function UseCaseFrameworkView({
           cases: caseResults,
           totalQuestions: totalQ,
           d1TotalCorrect: d1Corr,
-          d1AccuracyPct: totalQ > 0 ? Math.round((d1Corr / totalQ) * 100) : 100,
+          d1AccuracyPct: totalQ > 0 ? Math.round((d1Corr / totalQ) * 100) : 0,
           terraTotalCorrect: terraCorr,
           terraAccuracyPct:
-            totalQ > 0 ? Math.round((terraCorr / totalQ) * 100) : 100,
+            totalQ > 0 ? Math.round((terraCorr / totalQ) * 100) : 0,
           agreementPct:
             agreeTotal > 0 ? Math.round((agreeCount / agreeTotal) * 100) : 100,
           d1AvgMs: Math.round(d1MsSum / n),
@@ -621,8 +621,8 @@ export function UseCaseFrameworkView({
       <section className="wb-proof-strip">
         <div className="wb-proof-cell">
           <div className="wb-proof-label">
-            <span>01 · Official Foundry Pricing</span>
-            <span>Zero Output Billing</span>
+            <span>01 · Assumed Token Rates</span>
+            <span>Verify deployment pricing</span>
           </div>
           <div className="wb-proof-main">
             <span className="wb-proof-hero accent">
@@ -646,7 +646,7 @@ export function UseCaseFrameworkView({
 
         <div className="wb-proof-cell">
           <div className="wb-proof-label">
-            <span>02 · Fleet Cost / 1,000 Calls</span>
+            <span>02 · Estimated Fleet Cost / 1,000 Calls</span>
             <span>Across {filteredUseCases.length} Scenarios</span>
           </div>
           <div className="wb-proof-main">
@@ -681,28 +681,30 @@ export function UseCaseFrameworkView({
             <span>Ground-Truth Suite</span>
           </div>
           <div className="wb-proof-main">
-            <span className="wb-proof-hero accent">
-              {aggregateStats ? `${aggregateStats.d1AccuracyPct}%` : "Ready"}
+            <span className="wb-proof-hero">
+              {aggregateStats ? "Paired results" : "Ready"}
             </span>
             <div style={{ textAlign: "right", font: "500 var(--font-xs) var(--mono)" }}>
               <div style={{ color: "var(--primary)", fontWeight: 700 }}>
                 {aggregateStats
-                  ? `${aggregateStats.solutionsTested} solutions (${aggregateStats.totalCases} cases)`
+                  ? `Decision-1.1: ${aggregateStats.totalQuestions ? `${aggregateStats.d1AccuracyPct}%` : "Not scored"}`
                   : "2 cases per solution"}
               </div>
               <div style={{ color: "var(--terra)" }}>
                 {aggregateStats
-                  ? `Speedup: ${aggregateStats.speedup}× (${aggregateStats.avgD1Ms}ms vs ${aggregateStats.avgTerraMs}ms)`
+                  ? `${comparisonModelName}: ${aggregateStats.totalQuestions ? `${aggregateStats.terraAccuracyPct}%` : "Not scored"}`
                   : "Click Verify Suite above"}
               </div>
             </div>
           </div>
           <div className="wb-proof-sub">
-            <span>Violation + Compliant pairs</span>
-            <span>100% deterministic JSON schema</span>
+            <span>{aggregateStats ? `${aggregateStats.totalCases} cases · ${aggregateStats.totalQuestions} reference answers` : "Violation + Compliant pairs"}</span>
+            <span>{aggregateStats ? `${aggregateStats.avgD1Ms} ms vs ${aggregateStats.avgTerraMs} ms avg` : "Supplied reference answers"}</span>
           </div>
         </div>
       </section>
+      <p className="comparison-method">Cost figures use repository rate assumptions, not Azure billing data.
+        Current deployment prices and their verification date are not supplied; verify rates before budgeting.</p>
 
       {/* CLEAN EDITORIAL SOLUTION CARDS GRID */}
       <div className="uc-grid">
@@ -840,7 +842,7 @@ export function UseCaseFrameworkView({
                         setExpandedReportId(isExpanded ? null : uc.id)
                       }
                     >
-                      ✓ D1 {rep.d1AccuracyPct}% ({rep.d1AvgMs}ms){" "}
+                      D1 {rep.totalQuestions ? `${rep.d1AccuracyPct}%` : "Not scored"} · {comparisonModelName} {rep.totalQuestions ? `${rep.terraAccuracyPct}%` : "Not scored"}{" "}
                       {isExpanded ? "▲" : "▼"}
                     </button>
                   )}

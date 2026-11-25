@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { TRIAGE_FEED } from "@/lib/demo-data";
 import type { ExtractedSpan, NormalizedDecision } from "@/lib/foundry";
 import { CustomSelect } from "./CustomSelect";
+import { getTriageWorkers, type TriageMode } from "@/lib/triage-config";
 
 interface TriageScaleViewProps {
   sendWs: (action: string, payload?: Record<string, any>) => boolean;
@@ -20,12 +21,14 @@ interface FeedItemState {
   text: string;
   arrivedAt: number;
   d1?: {
+    ok: boolean;
     answers: Record<string, NormalizedDecision>;
     spans: ExtractedSpan[];
     latency_ms: number;
     wait_ms: number;
   };
   terra?: {
+    ok: boolean;
     answers: Record<string, NormalizedDecision>;
     latency_ms: number;
     wait_ms: number;
@@ -40,6 +43,10 @@ export default function TriageScaleView({
   comparisonModelName = "gpt-6.1-terra",
 }: TriageScaleViewProps) {
   const [rate, setRate] = useState(10);
+  const [comparisonMode, setComparisonMode] = useState<TriageMode>("equal");
+  const [resultMode, setResultMode] = useState<TriageMode | null>(null);
+  const mode = replayMode ? "demo" : comparisonMode;
+  const workers = getTriageWorkers(resultMode || mode);
   const [running, setRunning] = useState(false);
   const [items, setItems] = useState<Record<number, FeedItemState>>({});
   const [arrivalOrder, setArrivalOrder] = useState<number[]>([]);
@@ -65,6 +72,7 @@ export default function TriageScaleView({
       if (event.startsWith("triage_")) setEventTime(replayMode ? ts : Date.now());
       if (event === "triage_started") {
         setRunning(true);
+        setResultMode(data.comparisonMode === "equal" ? "equal" : "demo");
         setItems({});
         setArrivalOrder([]);
         setArrivedCount(0);
@@ -118,6 +126,7 @@ export default function TriageScaleView({
                 arrivedAt: Date.now(),
               }),
               d1: {
+                ok: data.ok !== false,
                 answers: data.answers || {},
                 spans: data.spans || [],
                 latency_ms: data.latency_ms || 0,
@@ -138,6 +147,7 @@ export default function TriageScaleView({
                 arrivedAt: Date.now(),
               }),
               terra: {
+                ok: data.ok !== false,
                 answers: data.answers || {},
                 latency_ms: data.latency_ms || 0,
                 wait_ms: data.wait_ms || 0,
@@ -156,7 +166,7 @@ export default function TriageScaleView({
       sendWs("stop_triage");
       setRunning(false);
     } else {
-      sendWs("start_triage", { rate, raceTerra: true });
+      sendWs("start_triage", { rate, raceTerra: true, comparisonMode: mode });
     }
   };
 
@@ -170,11 +180,13 @@ export default function TriageScaleView({
   const terraAvgWait = terraDoneCount
     ? Math.round(terraWaitTotal / terraDoneCount)
     : 0;
+  const d1Failed = Object.values(items).filter((item) => item.d1?.ok === false).length;
+  const terraFailed = Object.values(items).filter((item) => item.terra?.ok === false).length;
   const d1Throughput = d1DoneCount
-    ? (d1DoneCount / elapsedSec).toFixed(1)
+    ? ((d1DoneCount - d1Failed) / elapsedSec).toFixed(1)
     : "0.0";
   const terraThroughput = terraDoneCount
-    ? (terraDoneCount / elapsedSec).toFixed(1)
+    ? ((terraDoneCount - terraFailed) / elapsedSec).toFixed(1)
     : "0.0";
 
   // Aggregated dashboard metrics from Decision-1.1 results
@@ -189,7 +201,7 @@ export default function TriageScaleView({
   const entityCounts: Record<string, number> = {};
 
   Object.values(items).forEach((it) => {
-    const ans = it.d1?.answers;
+    const ans = it.d1?.ok ? it.d1.answers : undefined;
     if (!ans) return;
     const dept = String(ans.department?.key || "");
     if (dept && deptCounts[dept] !== undefined) deptCounts[dept]++;
@@ -223,6 +235,14 @@ export default function TriageScaleView({
           </h1>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", maxWidth: "100%" }}>
+          <div style={{ minWidth: 210 }}>
+            <CustomSelect value={mode} disabled={running || replayMode}
+              onChange={(value) => setComparisonMode(value as TriageMode)}
+              options={[
+                { value: "equal", label: "Equal workers · 4 vs 4", description: "Same workload and worker limit. Deployment and network conditions can still differ." },
+                { value: "demo", label: "Workload demo · 8 vs 4", description: "Different worker limits; not a model-only benchmark." },
+              ]} />
+          </div>
           <div style={{ minWidth: 185 }}>
             <CustomSelect
               value={String(rate)}
@@ -261,6 +281,12 @@ export default function TriageScaleView({
       </section>
 
       <main className="layout single">
+        <div className="comparison-method">
+          {replayMode ? "Included recordings use the original 8 vs 4 worker workload demo. Switch to live mode for equal-worker execution."
+            : "Equal-worker mode runs the same 40 messages and questions with 4 workers per model. Workload demo preserves the original 8 vs 4 setup."}
+          {" "}Results below: {(resultMode || mode) === "equal" ? "equal workers" : "workload demo"}.
+          {" "}Different resources and network conditions remain; completion time includes queueing and inference.
+        </div>
         {/* Dual Racing Lanes */}
         <section className="fh-lanes">
           <div className="fh-lane d1">
@@ -291,7 +317,7 @@ export default function TriageScaleView({
                   fontFamily: "var(--mono)",
                 }}
               >
-                8 concurrent workers
+                {workers.decision1} concurrent workers
               </b>
             </div>
 
@@ -311,23 +337,25 @@ export default function TriageScaleView({
                     /{N}
                   </small>
                 </span>
-                <span className="k">Processed</span>
+                <span className="k">Completed attempts</span>
               </div>
               <div className="fh-num">
                 <span className="v">{d1InQueue}</span>
-                <span className="k">In Queue</span>
+                <span className="k">Outstanding</span>
               </div>
               <div className="fh-num">
                 <span className="v">
                   {d1AvgWait ? `${(d1AvgWait / 1000).toFixed(1)}s` : "—"}
                 </span>
-                <span className="k">Avg Wait</span>
+                <span className="k">Avg completion time</span>
               </div>
               <div className="fh-num">
                 <span className="v">{d1Throughput}/s</span>
-                <span className="k">Throughput</span>
+                <span className="k">Successful / sec</span>
               </div>
             </div>
+            <p className="comparison-method">{d1DoneCount - d1Failed} successful · {d1Failed} failed
+              {d1DoneCount > 0 ? ` (${(d1Failed / d1DoneCount * 100).toFixed(1)}% error rate)` : ""}</p>
           </div>
 
           <div className="fh-lane terra">
@@ -358,7 +386,7 @@ export default function TriageScaleView({
                   fontFamily: "var(--mono)",
                 }}
               >
-                4 concurrent workers
+                {workers.terra} concurrent workers
               </b>
             </div>
 
@@ -381,22 +409,24 @@ export default function TriageScaleView({
                     /{N}
                   </small>
                 </span>
-                <span className="k">Processed</span>
+                <span className="k">Completed attempts</span>
               </div>
               <div className="fh-num">
                 <span className="v">{terraInQueue}</span>
-                <span className="k">In Queue</span>
+                <span className="k">Outstanding</span>
               </div>
               <div className="fh-num">
                 <span className="v">
                   {terraAvgWait ? `${(terraAvgWait / 1000).toFixed(1)}s` : "—"}
                 </span>
-                <span className="k">Avg Wait</span>
+                <span className="k">Avg completion time</span>
               </div>
               <div className="fh-num">
                 <span className="v">{terraThroughput}/s</span>
-                <span className="k">Throughput</span>
+                <span className="k">Successful / sec</span>
               </div>
+              <p className="comparison-method">{terraDoneCount - terraFailed} successful · {terraFailed} failed
+                {terraDoneCount > 0 ? ` (${(terraFailed / terraDoneCount * 100).toFixed(1)}% error rate)` : ""}</p>
             </div>
           </div>
         </section>
@@ -412,8 +442,8 @@ export default function TriageScaleView({
             <div style={{ color: "var(--text-muted)", fontSize: "var(--font-md)" }}>
               Decision-1.1 average end-to-end queue + inference wait:{" "}
               <b>{(d1FinishInfo.d1AvgWait / 1000).toFixed(1)}s</b>. This snapshot
-              includes running requests. The lanes use 8 and 4 workers,
-              respectively; this is not an equal-concurrency benchmark.
+              includes running requests. The lanes use {workers.decision1} and {workers.terra} workers,
+              respectively; {workers.decision1 === workers.terra ? "worker limits are equal, but deployment conditions may differ." : "this is not an equal-concurrency benchmark."}
             </div>
           </div>
         )}

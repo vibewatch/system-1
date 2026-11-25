@@ -73,7 +73,9 @@ export function recordingMatches(recording: ReplayRecording, action: string, pay
   if (recording.action !== action) return false;
   if (action === "run_compare") return canonical(recording.payload.state) === canonical(payload.state ?? "") && canonical(recording.payload.questions) === canonical(payload.questions);
   if (action === "start_runtime") return recording.payload.scenarioId === (payload.scenarioId || "dealer") && (!payload.questions || canonical(recording.payload.questions) === canonical(payload.questions));
-  if (action === "start_triage") return recording.payload.rate === (Number(payload.rate) || 10) && recording.payload.raceTerra === (payload.raceTerra !== false);
+  if (action === "start_triage") return recording.payload.rate === (Number(payload.rate) || 10)
+    && recording.payload.raceTerra === (payload.raceTerra !== false)
+    && (recording.payload.comparisonMode === "equal" ? "equal" : "demo") === (payload.comparisonMode === "equal" ? "equal" : "demo");
   return recording.payload.content === payload.content;
 }
 

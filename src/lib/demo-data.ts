@@ -52,7 +52,7 @@ export interface StudioSample {
 }
 
 /**
- * Official Microsoft Foundry Pay-As-You-Go Pricing:
+ * Repository pricing assumptions; verify current deployment rates before budgeting.
  * - Microsoft-Decision-1.1: $0.042 / 1M input tokens, $0.00 / 1M output tokens (Output is Free)
  * - Frontier Generative LLM (gpt-6.1-terra): $2.50 / 1M input tokens, $10.00 / 1M output tokens
  */
@@ -337,7 +337,7 @@ export function computeCorrectnessSummary(
   }
 
   return {
-    totalQuestions: evaluatedExpectedCount || questions.length,
+    totalQuestions: evaluatedExpectedCount,
     d1Correct,
     d1AccuracyPct:
       evaluatedExpectedCount > 0

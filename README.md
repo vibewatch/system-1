@@ -22,6 +22,10 @@ Interactive Next.js 15 enterprise showcase and head-to-head correctness & cost b
    - **04 · Agent Gate & Form**: Pre-execution policy gate + 13-field entity span extraction + gated customer reply drafting.
    - **05 · Solutions & Benchmarks Hub**: **16 Enterprise Solutions across 9 Industry Verticals** with multi-case **Ground-Truth Correctness & Model Agreement** benchmarks (`Case 1: Violation / High-Risk` vs `Case 2: Compliant / Safe Pass`), plus an interactive **Custom Solution Studio** to author, test, and save your own solutions.
 
+The comparison workbench leads with a paired result and same-scale latency, reference-correctness and estimated-cost bars. Either model can lead; ties and request failures are explicit. Errors from either model and answer disagreements sort first, and missing reference answers are not scored. Expand recorded-suite evidence for P50/P95 timings and aggregate reference matches, or adjust daily call volume to estimate business impact. Cost figures use repository rate assumptions with an explicit unverified-price notice; confidence is not presented as validated calibration.
+
+Live Triage defaults to **Equal workers · 4 vs 4**. **Workload demo · 8 vs 4** preserves the existing recorded setup; included replays are never relabeled as equal-worker tests. Both lanes report failed attempts separately from successful throughput. Equal worker limits do not remove differences in deployment, region or network conditions.
+
 ## Quick Start
 
 ```bash

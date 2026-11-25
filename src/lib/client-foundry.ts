@@ -3,6 +3,7 @@
 import { PublicClientApplication } from "@azure/msal-browser";
 import { DEFAULT_DECISION_DEPLOYMENT, DEFAULT_DECISION_ENDPOINT, normalizeFoundryEndpoint } from "./deployment";
 import { tracedBrowserFetch } from "./browser-trace";
+import { getTriageWorkers } from "./triage-config";
 import {
   CLAIM_DEMO,
   DecisionQuestion,
@@ -633,6 +634,7 @@ export async function streamConversationBrowser(
 export class BrowserFoundryDispatcher {
   private runtimeAbort: AbortController | null = null;
   private triageAbort = false;
+  private triageGeneration = 0;
   private currentConfig: AzureClientConfig;
 
   constructor(
@@ -660,6 +662,7 @@ export class BrowserFoundryDispatcher {
       this.runtimeAbort = null;
     }
     this.triageAbort = true;
+    this.triageGeneration++;
   }
 
   async dispatch(action: string, payload: Record<string, any> = {}) {
@@ -931,29 +934,36 @@ export class BrowserFoundryDispatcher {
 
     if (action === "stop_triage") {
       this.triageAbort = true;
+      this.triageGeneration++;
       this.emit("triage_stopped", {});
       return;
     }
 
     if (action === "start_triage") {
       this.triageAbort = false;
-      const rate = Number(payload.rate) || 10;
+      const generation = ++this.triageGeneration;
+      const isCurrent = () => !this.triageAbort && this.triageGeneration === generation;
+      const rate = Math.max(1, Math.min(30, Number(payload.rate) || 10));
+      const workers = getTriageWorkers(payload.comparisonMode);
+      const raceTerra = payload.raceTerra !== false;
       const messages = TRIAGE_FEED.messages;
       const questions = TRIAGE_FEED.questions;
       const N = messages.length;
 
-      this.emit("triage_started", { total: N, rate });
+      this.emit("triage_started", { total: N, rate, raceTerra,
+        comparisonMode: payload.comparisonMode === "equal" ? "equal" : "demo",
+        decisionConcurrency: workers.decision1, terraConcurrency: workers.terra });
       const d1Queue: Array<{ idx: number; arrivedAt: number }> = [];
       const terraQueue: Array<{ idx: number; arrivedAt: number }> = [];
       let arrivedCount = 0;
 
       const arrivalPromise = (async () => {
         for (let i = 0; i < N; i++) {
-          if (this.triageAbort) break;
+          if (!isCurrent()) break;
           const now = performance.now();
           arrivedCount++;
           d1Queue.push({ idx: i, arrivedAt: now });
-          terraQueue.push({ idx: i, arrivedAt: now });
+          if (raceTerra) terraQueue.push({ idx: i, arrivedAt: now });
           this.emit("triage_arrival", {
             index: i,
             text: messages[i],
@@ -964,7 +974,7 @@ export class BrowserFoundryDispatcher {
       })();
 
       const runD1Worker = async () => {
-        while (!this.triageAbort) {
+        while (isCurrent()) {
           const item = d1Queue.shift();
           if (!item) {
             if (arrivedCount >= N) break;
@@ -977,24 +987,28 @@ export class BrowserFoundryDispatcher {
               messages[item.idx],
               questions
             );
-            if (this.triageAbort) break;
+            if (!isCurrent()) break;
             const wait_ms = Math.round(performance.now() - item.arrivedAt);
             this.emit("triage_item_done", {
               lane: "decision1",
+              ok: res.ok,
               index: item.idx,
               latency_ms: res.latency_ms,
               wait_ms,
               answers: res.answers,
               spans: [],
             });
-          } catch {
-            // continue
+          } catch (error) {
+            if (!isCurrent()) break;
+            this.emit("triage_item_done", { lane: "decision1", index: item.idx,
+              ok: false, answers: {}, latency_ms: 0,
+              wait_ms: Math.round(performance.now() - item.arrivedAt), error: String(error) });
           }
         }
       };
 
       const runTerraWorker = async () => {
-        while (!this.triageAbort) {
+        while (isCurrent()) {
           const item = terraQueue.shift();
           if (!item) {
             if (arrivedCount >= N) break;
@@ -1007,27 +1021,31 @@ export class BrowserFoundryDispatcher {
               messages[item.idx],
               questions
             );
-            if (this.triageAbort) break;
+            if (!isCurrent()) break;
             const wait_ms = Math.round(performance.now() - item.arrivedAt);
             this.emit("triage_item_done", {
               lane: "terra",
+              ok: res.ok,
               index: item.idx,
               latency_ms: res.latency_ms,
               wait_ms,
               answers: res.answers,
             });
-          } catch {
-            // continue
+          } catch (error) {
+            if (!isCurrent()) break;
+            this.emit("triage_item_done", { lane: "terra", index: item.idx,
+              ok: false, answers: {}, latency_ms: 0,
+              wait_ms: Math.round(performance.now() - item.arrivedAt), error: String(error) });
           }
         }
       };
 
       await Promise.all([
         arrivalPromise,
-        ...Array.from({ length: 8 }, () => runD1Worker()),
-        ...Array.from({ length: 4 }, () => runTerraWorker()),
+        ...Array.from({ length: workers.decision1 }, () => runD1Worker()),
+        ...Array.from({ length: raceTerra ? workers.terra : 0 }, () => runTerraWorker()),
       ]);
-      if (!this.triageAbort) {
+      if (isCurrent()) {
         this.emit("triage_done", {});
       }
       return;

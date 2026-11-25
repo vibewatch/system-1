@@ -455,6 +455,11 @@ export default function RuntimeView({
         </p>
       </section>
 
+      <p className="comparison-method layout single">
+        Streaming capability demo, not a same-snapshot accuracy benchmark. The models may evaluate different transcript checkpoints.
+        More frequent updates or higher confidence do not establish higher accuracy.
+      </p>
+
       <main className="layout split-6-6">
         {/* Left Column */}
         <section className="card">
